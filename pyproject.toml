@@ -10,7 +10,7 @@ dependencies = [
     "fastapi>=0.104.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.25.0",
-
+    "ipdb>=0.13.13",
 ]
 
 [dependency-groups]
