@@ -1,0 +1,17 @@
+[project]
+name = "crudle"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.11.9",
+    "sqlalchemy>=2.0.43",
+    "fastapi>=0.104.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.25.0",
+
+]
+
+[dependency-groups]
+dev = ["alembic>=1.16.5", "pytest>=8.4.2"]
