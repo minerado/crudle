@@ -7,9 +7,9 @@ Crudle extends your SQLAlchemy models with intuitive CRUD operations, advanced q
 ## Why Crudle?
 
 - **Intuitive API**: Simple, readable methods
-- **Powerful Querying**: Advanced filtering, sorting, pagination, and search
+- **Powerful Querying**: Advanced filtering, sorting, and pagination
 - **Smart Relationships**: Automatic handling of complex relationships and nested data
-- **Flexible**: Custom filters, search fields, and extensible architecture
+- **Flexible**: Custom filters and extensible architecture
 
 ## Quick Start
 
@@ -135,8 +135,8 @@ users = User.list(db,
     role__ni=["admin", "moderator"]    # Not in list
 )
 
-# Search (PostgreSQL tsvector)
-users = User.list(db, name__q="john")  # Basic tsquery on specific field
+# Additional operators
+users = User.list(db, name__ne="admin")  # Not equal
 ```
 
 #### Complex Queries
@@ -272,7 +272,7 @@ user = User.insert(db,
 )
 ```
 
-### Custom Filters & Search
+### Custom Filters
 
 #### Custom Query Filters
 
@@ -281,8 +281,6 @@ class User(Base, SQLAlchemyAdapter):
     # ... columns ...
 
     class Queries:
-        search_fields = ["name", "email", "description"]
-
         def filter_is_adult(self, query, value):
             if value:
                 return query.filter(User.age >= 18)
@@ -299,23 +297,6 @@ active_users = User.list(db, has_posts=True)
 ```
 
 **Note:** Custom filters are fully extensible and integrate seamlessly with SQLAlchemy. You can use any SQLAlchemy query methods, joins, subqueries, or complex expressions within your custom filter functions, giving you the full power of SQLAlchemy while maintaining Crudle's simple API.
-
-#### Search Configuration
-
-```python
-class Article(Base, SQLAlchemyAdapter):
-    # ... columns ...
-
-    class Queries:
-        search_fields = ["title", "content", "tags.name"]
-
-# Search across multiple fields using search_fields
-articles = Article.list(db, search="python tutorial")
-# Basic tsquery on specific field
-articles = Article.list(db, title__q="machine learning")
-```
-
-**Note:** Search functionality requires PostgreSQL with tsvector support. The `search` parameter searches across all fields defined in `search_fields` using tsvector, while the `__q` suffix performs a basic tsquery on the specific field.
 
 ### Field Selection & Query Options
 
