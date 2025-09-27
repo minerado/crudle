@@ -1,3 +1,4 @@
-from .mixins import CRUDMixin, CRUDMixinHelper
+from .adapters.sqlalchemy import SQLAlchemyAdapter
 
-__all__ = ["CRUDMixin", "CRUDMixinHelper"]
+
+__all__ = ["SQLAlchemyAdapter"]

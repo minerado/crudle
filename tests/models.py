@@ -2,12 +2,12 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
-from src.crudle import CRUDMixin
+from src.crudle import SQLAlchemyAdapter
 from tests.conftest import Base
 
 
 # Define the models
-class Item(Base, CRUDMixin):
+class Item(Base, SQLAlchemyAdapter):
     __tablename__ = "items"
 
     id = Column(Integer, primary_key=True)
@@ -34,8 +34,18 @@ class Item(Base, CRUDMixin):
     # One-to-one relationship: one Item has one ItemType
     item_type = relationship("ItemType", back_populates="item")
 
+    class Queries:
+        def filter_is_expensive(self, query, value):
+            if value:
+                return query.filter(Item.price > 10)
 
-class ItemList(Base, CRUDMixin):
+            if value is False:
+                return query.filter(Item.price <= 10)
+
+            return query
+
+
+class ItemList(Base, SQLAlchemyAdapter):
     __tablename__ = "item_lists"
 
     id = Column(Integer, primary_key=True)
@@ -46,7 +56,7 @@ class ItemList(Base, CRUDMixin):
     items = relationship("Item", back_populates="item_list")
 
 
-class ItemTag(Base, CRUDMixin):
+class ItemTag(Base, SQLAlchemyAdapter):
     __tablename__ = "item_tags"
 
     id = Column(Integer, primary_key=True)
@@ -62,7 +72,7 @@ class ItemTag(Base, CRUDMixin):
     tag = relationship("Tag", back_populates="item_tags", overlaps="items,tags")
 
 
-class Tag(Base, CRUDMixin):
+class Tag(Base, SQLAlchemyAdapter):
     __tablename__ = "tags"
 
     id = Column(Integer, primary_key=True)
@@ -78,7 +88,7 @@ class Tag(Base, CRUDMixin):
     item_tags = relationship("ItemTag", back_populates="tag", overlaps="items,tags")
 
 
-class ItemType(Base, CRUDMixin):
+class ItemType(Base, SQLAlchemyAdapter):
     __tablename__ = "item_types"
 
     id = Column(Integer, primary_key=True)

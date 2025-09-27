@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from tests.models import Item, ItemList, ItemTag, ItemType, Tag
+from tests.models import Item, ItemList, ItemType, Tag
 
 
 def test_update_on_delete_all_should_add_assoc_with_existing_record(db):

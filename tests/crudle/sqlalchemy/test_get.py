@@ -1,4 +1,4 @@
-from tests.models.item import Item
+from tests.models import Item
 
 
 def test_get_should_return_record(db):

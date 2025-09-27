@@ -15,7 +15,7 @@ from typing import (
 from uuid import UUID
 
 
-class QueryParams(BaseModel):
+class QueryParamsModel(BaseModel):
     suffixes: ClassVar[Dict[str, List[Type]]] = {
         "eq": [int, float, str, date, datetime, UUID, list],
         "ne": [int, float, str, date, datetime, UUID, list],

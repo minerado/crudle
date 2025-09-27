@@ -45,3 +45,16 @@ def flatten_dict(nested_dict: dict, parent_key="", sep="."):
             items.append((new_key, value))
 
     return items
+
+
+def filter_none_values(data):
+    """
+    Filters out None values from a dictionary.
+
+    Args:
+        data (dict): The dictionary to filter.
+
+    Returns:
+        dict: A dictionary with None values filtered out.
+    """
+    return {k: v for k, v in data.items() if v is not None}

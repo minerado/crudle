@@ -4,15 +4,15 @@ from sqlalchemy import Select, text
 from sqlalchemy.sql import func
 from typing import Any, ClassVar
 
-from ..utils import build_tsquery_string
+from ...utils import build_tsquery_string
 
 
 OPERATORS = ["eq", "gt", "ge", "lt", "le", "ne", "in", "ni", "q"]
 
 
-class QueryField(BaseModel):
+class SQLAlchemyQueryField(BaseModel):
     """
-    `QueryField` helps build and manipulate SQLAlchemy queries with ease.
+    `SQLAlchemyQueryField` helps build and manipulate SQLAlchemy queries with ease.
 
     ### Attributes:
     - `name` (str): The name of the field to be queried.
@@ -23,7 +23,7 @@ class QueryField(BaseModel):
     ### Methods:
 
     #### `__init__(self, value: str, model: Any)`
-    Initializes the `QueryField` with a value and model.
+    Initializes the `SQLAlchemyQueryField` with a value and model.
 
     - **Parameters**:
       - `value` (str): The field and operator string (e.g., "age__gt").
@@ -32,7 +32,7 @@ class QueryField(BaseModel):
 
     - **Example**:
       ```python
-      qf = QueryField(value="age__gt", model=SomeModel)
+      qf = SQLAlchemyQueryField(value="age__gt", model=SomeModel)
       query.where(qf.operation(20))
       ```
     """
