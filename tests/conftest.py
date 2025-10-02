@@ -1,8 +1,6 @@
 import pytest
 import tempfile
 
-from fastapi import FastAPI  # noqa: E402
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 
@@ -18,10 +16,6 @@ TEST_URL = f"sqlite:///{temp_db.name}"
 
 # Create the base class for models
 Base = declarative_base()
-
-# Mock FastAPI app and dependencies for testing
-
-app = FastAPI()
 
 
 def get_db():
@@ -70,18 +64,3 @@ def db(engine):
         session.close()
         outer.rollback()  # wipes all writes from this test
         connection.close()
-
-
-# ---- FastAPI client using the SAME session as the test ----
-@pytest.fixture()
-def client(db: Session):
-    def _override_get_db():
-        try:
-            yield db
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.pop(get_db, None)
