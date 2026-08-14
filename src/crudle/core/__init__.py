@@ -1,1 +1,1 @@
-# Core Crudle functionality
+# Adapter interface (implemented by MemoryAdapter)

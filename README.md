@@ -1,6 +1,6 @@
 # Crudle
 
-**A CRUD library that simplifies working with SQLAlchemy.**
+**A CRUD library for SQLAlchemy models, plus an in-memory adapter for tests.**
 
 Crudle extends your SQLAlchemy models with intuitive CRUD operations, advanced querying capabilities, and smart relationship handling. Reduce boilerplate code and build features more efficiently.
 
@@ -10,6 +10,7 @@ Crudle extends your SQLAlchemy models with intuitive CRUD operations, advanced q
 - **Powerful Querying**: Advanced filtering, sorting, and pagination
 - **Smart Relationships**: Automatic handling of complex relationships and nested data
 - **Flexible**: Custom filters and extensible architecture
+- **In-memory twin**: `MemoryAdapter` for fast tests with Pydantic models
 
 ## Quick Start
 
@@ -18,8 +19,7 @@ Crudle extends your SQLAlchemy models with intuitive CRUD operations, advanced q
 ```python
 from crudle import SQLAlchemyAdapter
 from sqlalchemy import Column, Integer, String, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Define your model
 Base = declarative_base()
@@ -42,6 +42,23 @@ users = User.list(db, name="John Doe")
 user = User.get_by(db, email="john@example.com")
 user.update(db, name="Jane Doe")
 user.delete(db)
+```
+
+### Memory adapter (testing)
+
+```python
+from pydantic import BaseModel
+from crudle import MemoryAdapter
+
+class Item(BaseModel):
+    id: int | None = None
+    name: str
+    price: int | None = None
+
+db = MemoryAdapter()
+item = db.insert(Item, name="Widget", price=10)
+items = db.list(Item, price__ge=5)
+db.delete(Item, item.id)
 ```
 
 ## Core Features
