@@ -1,0 +1,1 @@
+# Memory adapter tests
