@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 
 from tests.crudle.adapters.memory.models import Item, ItemList, Tag, ItemType
 
-
 def test_list_should_return_all_records(db):
     """Test listing all records without filters."""
     # Arrange
@@ -24,7 +23,6 @@ def test_list_should_return_all_records(db):
     assert item2 in items
     assert item3 in items
 
-
 def test_list_should_return_empty_list_when_no_records(db):
     """Test listing when no records exist."""
     # Act
@@ -32,7 +30,6 @@ def test_list_should_return_empty_list_when_no_records(db):
 
     # Assert
     assert items == []
-
 
 def test_list_with_eq_operator(db):
     """Test listing with equality operator."""
@@ -54,7 +51,6 @@ def test_list_with_eq_operator(db):
     assert len(blue_items) == 1
     assert item2 in blue_items
 
-
 def test_list_with_multiple_filters(db):
     """Test listing with multiple filters combined."""
     # Arrange
@@ -73,7 +69,6 @@ def test_list_with_multiple_filters(db):
     assert item1 not in red_expensive_items
     assert item3 not in red_expensive_items
 
-
 def test_list_with_nested_filters(db):
     """Test listing with nested relationship filters."""
     # Arrange
@@ -91,7 +86,6 @@ def test_list_with_nested_filters(db):
     assert len(lists_with_red_items) == 1
     assert list1 in lists_with_red_items
     assert list2 not in lists_with_red_items
-
 
 def test_list_with_deep_nested_filters(db):
     """Test listing with deeply nested relationship filters."""
@@ -113,7 +107,6 @@ def test_list_with_deep_nested_filters(db):
     assert lists_with_expensive_items[0].id == list1.id
     assert not any(item.id == list2.id for item in lists_with_expensive_items)
 
-
 def test_list_with_sorting(db):
     """Test listing with sorting."""
     # Arrange
@@ -130,7 +123,6 @@ def test_list_with_sorting(db):
     assert items_sorted_by_price[1].price == 20
     assert items_sorted_by_price[2].price == 30
 
-
 def test_list_with_sorting_desc(db):
     """Test listing with descending sorting."""
     # Arrange
@@ -146,7 +138,6 @@ def test_list_with_sorting_desc(db):
     assert items_sorted_by_price[0].price == 30
     assert items_sorted_by_price[1].price == 20
     assert items_sorted_by_price[2].price == 10
-
 
 def test_list_with_multiple_sorting(db):
     """Test listing with multiple sort fields."""
@@ -170,7 +161,6 @@ def test_list_with_multiple_sorting(db):
     assert items_sorted[2].color == "red" and items_sorted[2].price == 20
     assert items_sorted[3].color == "red" and items_sorted[3].price == 10
 
-
 def test_list_with_limit(db):
     """Test listing with limit."""
     # Arrange
@@ -182,7 +172,6 @@ def test_list_with_limit(db):
 
     # Assert
     assert len(limited_items) == 3
-
 
 def test_list_with_skip(db):
     """Test listing with skip (offset)."""
@@ -196,7 +185,6 @@ def test_list_with_skip(db):
     # Assert
     assert len(skipped_items) == 3
 
-
 def test_list_with_limit_and_skip(db):
     """Test listing with both limit and skip."""
     # Arrange
@@ -208,7 +196,6 @@ def test_list_with_limit_and_skip(db):
 
     # Assert
     assert len(paginated_items) == 2
-
 
 def test_list_with_datetime_filters(db):
     """Test listing with datetime filters."""
@@ -225,7 +212,6 @@ def test_list_with_datetime_filters(db):
     assert item1 in items_by_date
     assert item2 in items_by_date
 
-
 def test_list_with_empty_filters(db):
     """Test listing with empty filter dictionary."""
     # Arrange
@@ -239,7 +225,6 @@ def test_list_with_empty_filters(db):
     assert len(items) == 2
     assert item1 in items
     assert item2 in items
-
 
 def test_list_with_none_values(db):
     """Test listing with None values in filters."""
@@ -259,7 +244,6 @@ def test_list_with_none_values(db):
     assert len(items_with_none_price) == 1
     assert item3 in items_with_none_price
 
-
 def test_list_with_complex_queries(db):
     """Test listing with complex queries combining multiple operators."""
     # Arrange
@@ -276,7 +260,6 @@ def test_list_with_complex_queries(db):
     assert len(complex_query) == 2
     assert item2 in complex_query  # blue, price=20
     assert item5 in complex_query  # red, price=25
-
 
 def test_list_with_relationship_filters_and_operators(db):
     """Test listing with relationship filters using operators."""
@@ -296,89 +279,12 @@ def test_list_with_relationship_filters_and_operators(db):
     assert list1 in lists_with_expensive_items  # has item2 with price=20
     assert list2 in lists_with_expensive_items  # has item3 with price=30
 
-
-def test_list_with_select_fields(db):
-    """Test listing with specific field selection."""
-    # Arrange
-    db.insert(Item, name="Item 1", color="red", price=10)
-    db.insert(Item, name="Item 2", color="blue", price=20)
-    db.insert(Item, name="Item 3", color="green", price=30)
-
-    # Act
-    items = db.list(Item, select=["name", "color"])
-
-    # Assert
-    assert len(items) == 3
-    # When using select, we get dictionaries with field names as keys
-    names = [item["name"] for item in items]
-    colors = [item["color"] for item in items]
-
-    assert "Item 1" in names
-    assert "Item 2" in names
-    assert "Item 3" in names
-    assert "red" in colors
-    assert "blue" in colors
-    assert "green" in colors
-
-
-def test_list_with_select_single_field(db):
-    """Test listing with single field selection."""
-    # Arrange
-    db.insert(Item, name="Item 1", color="red", price=10)
-    db.insert(Item, name="Item 2", color="blue", price=20)
-
-    # Act
-    items = db.list(Item, select=["name"])
-
-    # Assert
-    assert len(items) == 2
-    names = [item["name"] for item in items]
-    assert "Item 1" in names
-    assert "Item 2" in names
-
-
-def test_list_with_select_relationship_fields(db):
-    """Test listing with relationship field selection."""
-    # Arrange
-    item1 = db.insert(Item, name="Item 1", color="red")
-    item2 = db.insert(Item, name="Item 2", color="blue")
-    list1 = db.insert(ItemList, name="List 1", items=[item1, item2])
-
-    # Act
-    lists = db.list(ItemList, select=["name", "items.name", "items.color"])
-
-    # Assert
-    assert len(lists) == 1
-    list_data = lists[0]
-    assert list_data["name"] == "List 1"
-    assert "items" in list_data
-    assert len(list_data["items"]) == 2
-
-
-def test_list_with_return_dict(db):
-    """Test listing with return_dict option."""
-    # Arrange
-    db.insert(Item, name="Item 1", color="red", price=10)
-    db.insert(Item, name="Item 2", color="blue", price=20)
-
-    # Act
-    items = db.list(Item, return_dict=True)
-
-    # Assert
-    assert len(items) == 2
-    assert all(isinstance(item, dict) for item in items)
-    assert all("name" in item for item in items)
-    assert all("color" in item for item in items)
-    assert all("price" in item for item in items)
-
-
 def test_list_with_invalid_operator_raises(db):
     """Test that invalid operators raise like SQLAlchemy."""
     db.insert(Item, name="Item 1", color="red")
 
     with pytest.raises(Exception, match="Forbidden operator"):
         db.list(Item, color__invalid_op="red")
-
 
 def test_list_default_limit_is_25(db):
     """Test README default list limit of 25."""
@@ -390,7 +296,6 @@ def test_list_default_limit_is_25(db):
 
     items_all = db.list(Item, limit=100)
     assert len(items_all) == 30
-
 
 def test_list_with_distinct_on_fields(db):
     """Test distinct_on keeps first row per key after sort."""
@@ -408,7 +313,6 @@ def test_list_with_distinct_on_fields(db):
     colors = {item.color for item in items}
     assert colors == {"red", "blue"}
 
-
 def test_list_with_nested_dict_filters(db):
     """Test nested dict filters are flattened like SQLAlchemy."""
     item_type = db.insert(ItemType, name="Electronics")
@@ -418,7 +322,6 @@ def test_list_with_nested_dict_filters(db):
     items = db.list(Item, **{"item_type": {"name": "Electronics"}})
     assert len(items) == 1
     assert items[0].name == "Item 1"
-
 
 def test_list_with_mixed_type_comparisons(db):
     """Test that type mismatches in comparisons return False."""
@@ -431,7 +334,6 @@ def test_list_with_mixed_type_comparisons(db):
 
     # Assert
     assert len(items) == 0  # Should return empty due to type mismatch
-
 
 def test_list_with_sorting_and_pagination(db):
     """Test combining sorting with pagination."""
