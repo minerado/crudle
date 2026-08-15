@@ -1,6 +1,6 @@
 """List filters: greater-than-or-equal operator (`ge`) — Memory adapter.
 
-Stress twin of tests/crudle/sqlalchemy/test_list_ge.py.
+Stress twin of tests/crudle/adapters/sqlalchemy/list/test_list_ge.py.
 Same scenarios and sections; call shape is db.method(Model, ...).
 Assertions compare by id because Memory returns copies.
 

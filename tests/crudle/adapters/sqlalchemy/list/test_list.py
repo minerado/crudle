@@ -163,56 +163,6 @@ def test_list_with_limit_and_skip(db):
     assert len(paginated_items) == 2
 
 
-@pytest.mark.skip(
-    reason="Search functionality requires PostgreSQL tsvector support, not available in SQLite"
-)
-def test_list_with_search_fields(db):
-    """Test listing with search functionality."""
-    # Arrange
-    item1 = Item.insert(db, name="Apple iPhone", color="red")
-    item2 = Item.insert(db, name="Samsung Galaxy", color="blue")
-    item3 = Item.insert(db, name="Google Pixel", color="green")
-
-    # Create a custom model with search fields configured
-    class SearchableItem(Item):
-        class Queries:
-            search_fields = ["name"]
-
-    # Act
-    search_results = SearchableItem.list(db, search="Apple")
-
-    # Assert
-    assert len(search_results) == 1
-    assert item1 in search_results
-    assert item2 not in search_results
-    assert item3 not in search_results
-
-
-@pytest.mark.skip(
-    reason="Search functionality requires PostgreSQL tsvector support, not available in SQLite"
-)
-def test_list_with_q_operator(db):
-    """Test listing with q (search) operator."""
-    # Arrange
-    item1 = Item.insert(db, name="Apple iPhone", color="red")
-    item2 = Item.insert(db, name="Samsung Galaxy", color="blue")
-    item3 = Item.insert(db, name="Google Pixel", color="green")
-
-    # Create a custom model with search fields configured
-    class SearchableItem(Item):
-        class Queries:
-            search_fields = ["name"]
-
-    # Act
-    search_results = SearchableItem.list(db, name__q="Apple")
-
-    # Assert
-    assert len(search_results) == 1
-    assert item1 in search_results
-    assert item2 not in search_results
-    assert item3 not in search_results
-
-
 def test_list_with_custom_filters(db):
     """Test listing with custom filters defined in Queries class."""
     # Arrange

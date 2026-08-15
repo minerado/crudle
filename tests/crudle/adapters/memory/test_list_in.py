@@ -1,6 +1,6 @@
 """List filters: membership operator (`in`) — Memory adapter.
 
-Stress twin of tests/crudle/sqlalchemy/test_list_in.py.
+Stress twin of tests/crudle/adapters/sqlalchemy/list/test_list_in.py.
 Same scenarios and sections; call shape is db.method(Model, ...).
 Assertions compare by id because Memory returns copies.
 """

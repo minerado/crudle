@@ -1,6 +1,6 @@
 """List filters: less-than-or-equal operator (`le`) — Memory adapter.
 
-Stress twin of tests/crudle/sqlalchemy/test_list_le.py.
+Stress twin of tests/crudle/adapters/sqlalchemy/list/test_list_le.py.
 Same scenarios and sections; call shape is db.method(Model, ...).
 Assertions compare by id because Memory returns copies.
 

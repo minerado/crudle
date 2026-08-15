@@ -55,23 +55,6 @@ def test_list_with_eq_operator(db):
     assert item2 in blue_items
 
 
-def test_list_with_q_operator(db):
-    """Test listing with q (text search) operator."""
-    # Arrange
-    item1 = db.insert(Item, name="Apple iPhone", color="red")
-    item2 = db.insert(Item, name="Samsung Galaxy", color="blue")
-    item3 = db.insert(Item, name="Google Pixel", color="green")
-
-    # Act
-    search_results = db.list(Item, name__q="Apple")
-
-    # Assert
-    assert len(search_results) == 1
-    assert item1 in search_results
-    assert item2 not in search_results
-    assert item3 not in search_results
-
-
 def test_list_with_multiple_filters(db):
     """Test listing with multiple filters combined."""
     # Arrange
@@ -387,38 +370,6 @@ def test_list_with_return_dict(db):
     assert all("name" in item for item in items)
     assert all("color" in item for item in items)
     assert all("price" in item for item in items)
-
-
-def test_list_with_text_search_case_insensitive(db):
-    """Test text search is case insensitive."""
-    # Arrange
-    item1 = db.insert(Item, name="Apple iPhone", color="red")
-    item2 = db.insert(Item, name="Samsung Galaxy", color="blue")
-    item3 = db.insert(Item, name="Google Pixel", color="green")
-
-    # Act
-    search_results = db.list(Item, name__q="apple")
-
-    # Assert
-    assert len(search_results) == 1
-    assert item1 in search_results
-
-
-def test_list_with_text_search_partial_match(db):
-    """Test text search with partial matches."""
-    # Arrange
-    item1 = db.insert(Item, name="Apple iPhone 13", color="red")
-    item2 = db.insert(Item, name="Apple MacBook", color="blue")
-    item3 = db.insert(Item, name="Samsung Galaxy", color="green")
-
-    # Act
-    search_results = db.list(Item, name__q="Apple")
-
-    # Assert
-    assert len(search_results) == 2
-    assert item1 in search_results
-    assert item2 in search_results
-    assert item3 not in search_results
 
 
 def test_list_with_invalid_operator_raises(db):

@@ -1,6 +1,6 @@
 """List filters: equality operator (`eq` / bare field) — Memory adapter.
 
-Stress twin of tests/crudle/sqlalchemy/test_list_eq.py.
+Stress twin of tests/crudle/adapters/sqlalchemy/list/test_list_eq.py.
 Same scenarios and sections; call shape is db.method(Model, ...) instead of
 Model.method(db, ...). Assertions compare by id because Memory returns copies.
 

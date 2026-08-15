@@ -13,5 +13,11 @@ dependencies = [
 dev = [
     "alembic>=1.16.5",
     "ipdb>=0.13.13",
+    "psycopg[binary]>=3.2.0",
     "pytest>=8.4.2",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "postgres: requires Postgres (FTS / tsvector); set CRUDLE_TEST_DATABASE_URL to run",
 ]

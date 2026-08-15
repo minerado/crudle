@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import RelationshipProperty
@@ -11,6 +13,23 @@ ON_UPDATE_ASSOC_OPTIONS = {
     "nilify_all": "nilify_all",
     "delete_all": "delete_all",
 }
+
+
+def build_tsquery_string(term: str) -> str:
+    """Format a string into a Postgres tsquery prefix expression.
+
+    Example:
+        >>> build_tsquery_string("John Doe")
+        >>> "John:* & Doe:*"
+    """
+    # Duplicate single quotes to escape them
+    term = term.replace("'", "''")
+
+    # Sanitize term by removing special characters
+    term = re.sub(r"[^\w\s]", "", term)
+
+    # Split each word and join them with '&' while adding the prefix search operator ':*'
+    return " & ".join([f"{w}:*" for w in term.split()])
 
 
 def validate_association_value(item, relationship_name):

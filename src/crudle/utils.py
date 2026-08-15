@@ -1,22 +1,4 @@
-import re
-
-
-def build_tsquery_string(term: str) -> str:
-    """
-    Formats a string into a tsquery format.
-
-    Example:
-        >>> build_tsquery_string("John Doe")
-        >>> "John:* & Doe:*"
-    """
-    # Duplicate single quotes to escape them
-    term = term.replace("'", "''")
-
-    # Sanitize term by removing special characters
-    term = re.sub(r"[^\w\s]", "", term)
-
-    # Split each word and join them with '&' while adding the prefix search operator ':*'
-    return " & ".join([f"{w}:*" for w in term.split()])
+"""Flattens nested dicts and filters None values — shared, adapter-agnostic helpers."""
 
 
 def flatten_dict(nested_dict: dict, parent_key="", sep="."):
