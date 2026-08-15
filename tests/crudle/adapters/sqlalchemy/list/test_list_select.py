@@ -12,6 +12,8 @@ Deep select supports multi-hop paths (e.g. ``items.item_type.name``) via
 deduplicated outer joins in a single query; see the Deep select section.
 """
 
+import pytest
+
 from tests.models import Item, ItemList, ItemType, Tag
 
 
@@ -569,6 +571,14 @@ def test_list_with_select_count_single_field(db):
     assert isinstance(item, dict)
     assert "count.id" in item
     assert item["count.id"] == 2
+
+
+def test_list_with_select_count_invalid_path_raises(db):
+    """Bad nested count paths must not silently fall back to parent COUNT."""
+    Item.insert(db, name="Item 1", color="red")
+
+    with pytest.raises(AttributeError, match="nope"):
+        Item.list(db, select=["count.nope.x"])
 
 
 # ---------------------------------------------------------------------------

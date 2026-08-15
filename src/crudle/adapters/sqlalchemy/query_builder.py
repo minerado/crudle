@@ -190,29 +190,23 @@ class SQLAlchemyQueryBuilder:
                             rel_path_prefixes.add(
                                 tuple(query_field.parents[: index + 1])
                             )
-                    try:
-                        query = query_field.join_query(
-                            query, join_opts={"isouter": True}
-                        )
-                        for index in range(len(query_field.parents)):
-                            joined_paths.add(tuple(query_field.parents[: index + 1]))
-                        # Non-null related scalar → count distinct parent rows
-                        # (Memory parity; avoids distinct-value collapse).
-                        related_col = query_field.parent_model_field
-                        parent_id = getattr(self.model, "id")
-                        query_fields.append(
-                            func.count(
-                                distinct(
-                                    case((related_col.isnot(None), parent_id))
-                                )
-                            ).label(f)
-                        )
-                        selected_labels.add(f)
-                    except Exception:
-                        query_fields.append(
-                            func.count(distinct(self.model.id)).label(f)
-                        )
-                        selected_labels.add(f)
+                    query = query_field.join_query(
+                        query, join_opts={"isouter": True}
+                    )
+                    for index in range(len(query_field.parents)):
+                        joined_paths.add(tuple(query_field.parents[: index + 1]))
+                    # Non-null related scalar → count distinct parent rows
+                    # (Memory parity; avoids distinct-value collapse).
+                    related_col = query_field.parent_model_field
+                    parent_id = getattr(self.model, "id")
+                    query_fields.append(
+                        func.count(
+                            distinct(
+                                case((related_col.isnot(None), parent_id))
+                            )
+                        ).label(f)
+                    )
+                    selected_labels.add(f)
                 else:
                     query_field = SQLAlchemyQueryField(field, self.model)
                     query = query_field.join_query(query)

@@ -74,7 +74,7 @@ The fixture creates extension `unaccent` and text search config `unaccent_simple
 (required by the SQLAlchemy `q` adapter). Postgres `distinct_on` lives in
 `tests/crudle/adapters/sqlalchemy/list/test_list_distinct_on.py` (empty `[]` also
 runs on SQLite). Memory’s in-process twin is
-`tests/crudle/adapters/memory/test_list_distinct_on.py`.
+`tests/crudle/adapters/memory/list/test_list_distinct_on.py`.
 
 ```python
 from pydantic import BaseModel
@@ -142,8 +142,8 @@ users = User.list(db, sort=[
 # Update instance
 user.update(db, name="Alice Smith", age=31)
 
-# Update by criteria
-User.update_by(db, filters={"email": "alice@example.com"}, name="Alice Johnson")
+# Update by criteria (filters dict is positional)
+User.update_by(db, {"email": "alice@example.com"}, name="Alice Johnson")
 
 # Update with relationship handling
 user.update(db, role="senior_developer", department_id=2)
@@ -403,16 +403,18 @@ user = User.upsert_by(db, {"email": "john@example.com"}, name="John Doe")
 ### Transaction Management
 
 ```python
-# Control commits
+# Insert without committing — row stays pending until db.commit()
 user = User.insert(db, name="Test", commit=False)
 # ... do more operations
 db.commit()  # Commit all at once
 
-# Update without committing
+# Update with commit=False returns a preview copy and rolls back the
+# session work; the original row is unchanged (not “commit later”).
 user = User.get(db, 1)
-updated_user = user.update(db, name="New Name", commit=False)
-# ... more operations
-db.commit()
+preview = user.update(db, name="New Name", commit=False)
+assert preview.name == "New Name"
+db.refresh(user)
+assert user.name != "New Name"
 ```
 
 ### Relationship Update Strategies
@@ -518,14 +520,16 @@ Lists records based on filters and options.
 
 #### `update_by(db, filters, should_raise=False, **kwargs)`
 
-Updates records matching the filters.
+Updates **exactly one** record matching ``filters``, or returns ``None``.
+``filters`` is a positional dict (same dialect as ``get_by``); ambiguity
+raises ``MultipleResultsFound``.
 
 **Parameters:**
 
 - `db`: SQLAlchemy session
-- `filters`: Dictionary of filter criteria
-- `should_raise`: Whether to raise exception if no records found
-- `**kwargs`: Attributes to update
+- `filters`: Dictionary of filter criteria (positional)
+- `should_raise`: Raise ``NoResultFound`` if no record matches
+- `**kwargs`: Attributes to update (plus ``on_update_assocs`` / ``commit``)
 
 **Returns:** Updated model instance or None
 
@@ -557,13 +561,18 @@ Counts records matching the filters. Shares the list filter / assoc /
 
 #### `upsert_by(db, filters, **kwargs)`
 
-Updates existing record or creates new one.
+Updates exactly one match, or inserts if none match (``update_by`` then
+``insert``). On miss, simple equality keys from ``filters`` merge into
+insert attrs when absent from ``**kwargs``; operator / association-hop
+keys and ``on_update_assocs`` / ``should_raise`` are not written as
+columns. ``should_raise=True`` still raises on miss (never inserts).
+Ambiguous filters raise ``MultipleResultsFound``.
 
 **Parameters:**
 
 - `db`: SQLAlchemy session
 - `filters`: Dictionary of filter criteria
-- `**kwargs`: Attributes to set
+- `**kwargs`: Attributes to set (plus update control keys on the hit path)
 
 **Returns:** Model instance
 

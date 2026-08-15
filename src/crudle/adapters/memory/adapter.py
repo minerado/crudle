@@ -168,16 +168,24 @@ class MemoryAdapter(AdapterInterface):
         return self._data[model_class]
 
     def _snapshot_store(self) -> Dict[str, Any]:
-        """Shallow-copy per-model id maps and id counters for insert rollback."""
-        return {
-            "data": {
-                model: dict(instances) for model, instances in self._data.items()
-            },
-            "counters": dict(self._counters),
-        }
+        """Freeze store + counters for insert/update rollback.
+
+        Deep-copies Pydantic instances so in-place association mutations
+        (e.g. ``nilify_all`` FK clears) can be undone on failure.
+        """
+        data: Dict[Any, Dict[Any, Any]] = {}
+        for model, instances in self._data.items():
+            frozen: Dict[Any, Any] = {}
+            for instance_id, instance in instances.items():
+                if isinstance(instance, BaseModel):
+                    frozen[instance_id] = instance.model_copy(deep=True)
+                else:
+                    frozen[instance_id] = instance
+            data[model] = frozen
+        return {"data": data, "counters": dict(self._counters)}
 
     def _restore_store(self, snapshot: Dict[str, Any]) -> None:
-        """Restore store + counters after a failed nested insert graph."""
+        """Restore store + counters after a failed write graph."""
         self._data = {
             model: dict(instances) for model, instances in snapshot["data"].items()
         }
@@ -200,7 +208,15 @@ class MemoryAdapter(AdapterInterface):
 
                 # Store in data using the ID
                 instance_id = getattr(instance, "id", kwargs["id"])
-                self._ensure_model_data(model_class)[instance_id] = instance
+                model_data = self._ensure_model_data(model_class)
+                if instance_id in model_data:
+                    raise IntegrityError(
+                        f"Duplicate primary key for {model_class.__name__}: "
+                        f"{instance_id}",
+                        params=None,
+                        orig=None,
+                    )
+                model_data[instance_id] = instance
 
                 # Set foreign keys on related objects
                 self._set_foreign_keys(instance, processed_kwargs)
@@ -749,6 +765,7 @@ class MemoryAdapter(AdapterInterface):
             )
 
         if isinstance(instance, BaseModel):
+            snapshot = self._snapshot_store()
             try:
                 relationships = self._infer_relationships(type(instance))
                 # Work on the stored instance (already the live object)
@@ -781,9 +798,13 @@ class MemoryAdapter(AdapterInterface):
 
                 return updated_instance
             except ValidationError as e:
+                self._restore_store(snapshot)
                 raise ValueError(
                     f"Validation error updating {type(instance).__name__}: {e}"
                 )
+            except Exception:
+                self._restore_store(snapshot)
+                raise
         else:
             for key, value in kwargs.items():
                 if key != "id":

@@ -4,6 +4,7 @@ SA insert does not run Pydantic; this suite is Memory-only.
 """
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from tests.crudle.adapters.memory.models import Item, Tag
 
@@ -26,3 +27,12 @@ class TestInsertValidation:
     def test_string_too_long(self, db):
         with pytest.raises(ValueError, match="validation error"):
             db.insert(Item, name="x" * 200)
+
+    def test_duplicate_id_raises(self, db):
+        first = db.insert(Item, name="a", color="red")
+
+        with pytest.raises(IntegrityError, match="Duplicate primary key"):
+            db.insert(Item, id=first.id, name="b", color="blue")
+
+        assert db.count(Item) == 1
+        assert db.get(Item, first.id).name == "a"

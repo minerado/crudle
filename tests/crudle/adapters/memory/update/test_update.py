@@ -58,6 +58,45 @@ class TestUpdate:
         with pytest.raises(ValueError, match="Validation error"):
             db.update(Item, item.id, name="x" * 200)
 
+        assert db.get(Item, item.id).name == "a"
+
+    def test_failed_update_restores_delete_all(self, db):
+        a = db.insert(Item, name="a", color="red")
+        b = db.insert(Item, name="b", color="blue")
+        lst = db.insert(ItemList, name="L1", items=[a, b])
+
+        with pytest.raises(ValueError, match="Validation error"):
+            db.update(
+                ItemList,
+                lst.id,
+                name="x" * 200,
+                items=[],
+                on_update_assocs="delete_all",
+            )
+
+        assert db.count(Item) == 2
+        assert db.get(ItemList, lst.id).name == "L1"
+        assert db.get(Item, a.id) is not None
+        assert db.get(Item, b.id) is not None
+
+    def test_failed_update_restores_nilify_all(self, db):
+        a = db.insert(Item, name="a", color="red")
+        b = db.insert(Item, name="b", color="blue")
+        lst = db.insert(ItemList, name="L1", items=[a, b])
+
+        with pytest.raises(ValueError, match="Validation error"):
+            db.update(
+                ItemList,
+                lst.id,
+                name="x" * 200,
+                items=[],
+                on_update_assocs="nilify_all",
+            )
+
+        assert db.get(Item, a.id).item_list_id == lst.id
+        assert db.get(Item, b.id).item_list_id == lst.id
+        assert db.get(ItemList, lst.id).name == "L1"
+
     def test_default_on_update_assocs_is_raise(self, db):
         a = db.insert(Item, name="a", color="red")
         b = db.insert(Item, name="b", color="blue")
