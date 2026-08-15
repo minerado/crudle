@@ -1725,7 +1725,10 @@ class MemoryAdapter(AdapterInterface):
         return self.insert(model, **kwargs)
 
     def delete(self, model: Type, id: Union[str, int]) -> Optional[Any]:
-        """Delete a record by ID.
+        """Delete a record by ID (Ecto ``:nothing`` for related rows).
+
+        Pops only the target from the store. Does not simulate SQLAlchemy /
+        DB cascade, SET NULL, or RESTRICT.
 
         Args:
             model: The model class

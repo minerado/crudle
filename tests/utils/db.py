@@ -13,8 +13,10 @@ def create_database(url: str):
         db_path = url.replace("sqlite:///", "")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    # Create tables using the models
+    # Create tables using the models (import registers metadata)
     from tests.conftest import Base, TEST_URL
+    import tests.models  # noqa: F401
+    import tests.models_delete_cascade  # noqa: F401
 
     engine = create_engine(TEST_URL)
     Base.metadata.create_all(engine)

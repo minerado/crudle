@@ -151,13 +151,39 @@ user.update(db, role="senior_developer", department_id=2)
 
 #### Delete
 
+Delete removes **this row**. Neighbor rows are not guessed — their fate comes
+from declared FK / association policy (same idea as Ecto
+`references(..., on_delete: ...)`), not from a `cascade=` kwarg on `delete`.
+
 ```python
 # Delete instance
 user.delete(db)
 
-# Delete by criteria
+# Delete by unique filters (get_by, then delete that row)
 User.delete_by(db, email="old@example.com")
 ```
+
+| Ecto | SQLAlchemy / crudle |
+|------|----------------------|
+| `Repo.delete(struct)` | `instance.delete(db)` / `db.delete(Model, id)` (Memory) |
+| Delete by filters (app pattern) | `delete_by` (= `get_by` then delete) |
+| Association `on_delete: :nothing` (default) | No `cascade=`, no `ondelete` — **default** |
+| `on_delete: :nilify_all` | Nullable FK + `ondelete="SET NULL"` (and/or ORM nullify) |
+| `on_delete: :delete_all` | `cascade="all, delete"` and/or `ondelete="CASCADE"` |
+| `on_delete: :restrict` | `ondelete="RESTRICT"` → delete fails if children exist |
+| `many_to_many` join rows | Clear join / `secondary`; **do not** delete the other side unless declared |
+
+Default is **`:nothing`**. Declare cascade on the relationship or FK, not on the
+call site. `on_update_assocs` (`raise` / `nilify_all` / `delete_all`) is the
+**update** twin of Ecto `on_replace`; it does not apply to `delete`.
+
+Prefer one of Ecto-style `many_to_many` **or** an explicit join schema — not both
+as first-class equals on the same pair (dual `secondary=` + association-object
+mappings are a footgun; crudle clears `secondary=` collections before
+`session.delete` for safety).
+
+`MemoryAdapter` delete is always **`:nothing`** for related rows (pop the
+target only). It does not simulate DB cascades yet.
 
 ### Advanced Querying
 
@@ -558,7 +584,8 @@ Updates the current instance.
 
 #### `delete(db, commit=True)`
 
-Deletes the current instance.
+Deletes the current instance. Related-row fate follows declared association /
+FK policy (default `:nothing`). See [Delete](#delete).
 
 **Parameters:**
 
