@@ -12,7 +12,6 @@ nested lists at collection hops; see the Deep select section.
 
 from tests.crudle.adapters.memory.models import Item, ItemList, ItemType, Tag
 
-
 # ---------------------------------------------------------------------------
 # Scalars
 # ---------------------------------------------------------------------------

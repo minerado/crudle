@@ -3,10 +3,9 @@ import tempfile
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 from tests.utils.db import create_database, drop_database, migrate_head  # noqa: E402
-
 
 # Create a temporary SQLite database file
 temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")

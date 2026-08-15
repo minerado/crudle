@@ -1,7 +1,7 @@
 """Tests for preload functionality in MemoryAdapter."""
 
-import pytest
-from src.crudle.adapters.memory.adapter import MemoryAdapter, NotLoaded
+from src.crudle.adapters.memory.adapter import NotLoaded
+
 from .models import Item, ItemList, ItemType, Tag
 
 
@@ -11,8 +11,8 @@ class TestPreload:
     def test_relationships_default_to_notloaded(self, db):
         """Test that relationships default to NotLoaded."""
         # Create test data
-        item_list = db.insert(ItemList, name="Test List")
-        item_type = db.insert(ItemType, name="Test Type")
+        db.insert(ItemList, name="Test List")
+        db.insert(ItemType, name="Test Type")
 
         # Create item without explicit relationships
         item = db.insert(Item, name="Test Item", color="red")
@@ -46,8 +46,8 @@ class TestPreload:
         """Test preloading one-to-many relationships."""
         # Create test data
         item_list = db.insert(ItemList, name="Test List")
-        item1 = db.insert(Item, name="Item 1", color="red", item_list_id=item_list.id)
-        item2 = db.insert(Item, name="Item 2", color="blue", item_list_id=item_list.id)
+        db.insert(Item, name="Item 1", color="red", item_list_id=item_list.id)
+        db.insert(Item, name="Item 2", color="blue", item_list_id=item_list.id)
 
         # Get item_list without preload
         list_no_preload = db.get(ItemList, item_list.id)
@@ -65,8 +65,8 @@ class TestPreload:
         # Create test data
         item_type = db.insert(ItemType, name="Test Type")
         item_list = db.insert(ItemList, name="Test List")
-        tag1 = db.insert(Tag, name="tag1")
-        tag2 = db.insert(Tag, name="tag2")
+        db.insert(Tag, name="tag1")
+        db.insert(Tag, name="tag2")
 
         item = db.insert(
             Item,
@@ -91,8 +91,8 @@ class TestPreload:
         """Test preloading relationships when using list method."""
         # Create test data
         item_type = db.insert(ItemType, name="Test Type")
-        item1 = db.insert(Item, name="Item 1", color="red", item_type_id=item_type.id)
-        item2 = db.insert(Item, name="Item 2", color="blue", item_type_id=item_type.id)
+        db.insert(Item, name="Item 1", color="red", item_type_id=item_type.id)
+        db.insert(Item, name="Item 2", color="blue", item_type_id=item_type.id)
 
         # List items without preload
         items_no_preload = db.list(Item)
@@ -109,7 +109,7 @@ class TestPreload:
         """Test preloading relationships when using get_by method."""
         # Create test data
         item_type = db.insert(ItemType, name="Test Type")
-        item = db.insert(Item, name="Test Item", color="red", item_type_id=item_type.id)
+        db.insert(Item, name="Test Item", color="red", item_type_id=item_type.id)
 
         # Get by without preload
         item_no_preload = db.get_by(Item, name="Test Item")

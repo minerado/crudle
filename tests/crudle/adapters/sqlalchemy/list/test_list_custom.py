@@ -16,7 +16,6 @@ Sections: naming, value handling, composition, relationships, combos.
 
 from tests.models import Item, ItemList
 
-
 # ---------------------------------------------------------------------------
 # Local models / Queries (same tables via subclass, or tiny helpers)
 # ---------------------------------------------------------------------------

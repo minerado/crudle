@@ -21,7 +21,6 @@ from sqlalchemy.exc import ArgumentError
 
 from tests.models import Item, ItemList, ItemTag, ItemType, Tag
 
-
 # ---------------------------------------------------------------------------
 # Cardinality
 # ---------------------------------------------------------------------------

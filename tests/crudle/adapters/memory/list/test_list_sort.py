@@ -9,10 +9,7 @@ is undefined for Memory (no join multiplication); those cases stay SA-only.
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
-from tests.crudle.adapters.memory.models import Item, ItemList, ItemType, Tag
-
+from tests.crudle.adapters.memory.models import Item, ItemType
 
 # ---------------------------------------------------------------------------
 # Basics

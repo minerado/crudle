@@ -1,8 +1,6 @@
 """Tests for complete immutability of the MemoryAdapter."""
 
-import pytest
-from src.crudle.adapters.memory.adapter import MemoryAdapter, NotLoaded
-from .models import Item, ItemList, ItemType, Tag
+from .models import Item, ItemList, ItemType
 
 
 class TestImmutability:
@@ -65,7 +63,7 @@ class TestImmutability:
     def test_get_by_returns_immutable_copy(self, db):
         """Test that get_by returns an immutable copy."""
         # Arrange
-        item = db.insert(Item, name="Test Item", color="red")
+        db.insert(Item, name="Test Item", color="red")
 
         # Act
         retrieved_item = db.get_by(Item, name="Test Item")
@@ -204,7 +202,7 @@ class TestImmutability:
         # Arrange
         item_type = db.insert(ItemType, name="Test Type")
         item = db.insert(Item, name="Test Item", color="red", item_type_id=item_type.id)
-        item_list = db.insert(ItemList, name="Test List", items=[item])
+        db.insert(ItemList, name="Test List", items=[item])
 
         # Act - get with preload
         item_with_preload = db.get(Item, item.id, preload=["item_type", "item_list"])

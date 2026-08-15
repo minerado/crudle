@@ -7,7 +7,6 @@ from sqlalchemy.sql.elements import BinaryExpression
 
 from ...utils import filter_none_values
 
-
 ON_UPDATE_ASSOC_OPTIONS = {
     "raise": "raise",
     "nilify_all": "nilify_all",

@@ -1,7 +1,8 @@
+from typing import List
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 from sqlalchemy.orm.session import Session
-from typing import List
 
 from .helpers import (
     ON_UPDATE_ASSOC_OPTIONS,

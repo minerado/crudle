@@ -2,10 +2,12 @@
 Test list operations for memory adapter.
 """
 
-import pytest
 from datetime import datetime, timezone
 
-from tests.crudle.adapters.memory.models import Item, ItemList, Tag, ItemType
+import pytest
+
+from tests.crudle.adapters.memory.models import Item, ItemType
+
 
 def test_list_should_return_all_records(db):
     """Test listing all records without filters."""
@@ -153,8 +155,8 @@ def test_list_with_nested_dict_filters(db):
 def test_list_with_mixed_type_comparisons(db):
     """Test that type mismatches in comparisons return False."""
     # Arrange
-    item1 = db.insert(Item, name="Item 1", price=10)
-    item2 = db.insert(Item, name="Item 2", price=20)
+    db.insert(Item, name="Item 1", price=10)
+    db.insert(Item, name="Item 2", price=20)
 
     # Act
     items = db.list(Item, price__gt="not_a_number")

@@ -1,12 +1,12 @@
-from typing import Any, Dict, List, Optional, Type, Union, get_origin, get_args
-from datetime import datetime, timezone
 import inspect
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Type, Union, get_args, get_origin
+
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import IntegrityError, MultipleResultsFound
 
 from ...core.interface import AdapterInterface
 from ...utils import flatten_dict
-
 
 ALLOWED_OPERATORS = ["eq", "gt", "ge", "lt", "le", "ne", "in", "ni", "q"]
 DEFAULT_QUERY_LIMIT = 25

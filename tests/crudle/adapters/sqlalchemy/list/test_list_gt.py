@@ -17,7 +17,6 @@ from sqlalchemy.exc import ArgumentError
 
 from tests.models import Item, ItemList, ItemType, Tag
 
-
 # ---------------------------------------------------------------------------
 # Matches — when greater-than finds rows
 # ---------------------------------------------------------------------------

@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 
 from tests.models import Item, ItemList, ItemType, Tag
 
-
 # ---------------------------------------------------------------------------
 # Matches — when not-equal finds rows
 # ---------------------------------------------------------------------------
@@ -93,7 +92,7 @@ class TestListNeSpellings:
     def test_nested_deep_dotted_path(self, db):
         item1 = Item.insert(db, name="Item 1", color="red")
         item2 = Item.insert(db, name="Item 2", color="blue")
-        list1 = ItemList.insert(db, name="List 1", items=[item1])
+        ItemList.insert(db, name="List 1", items=[item1])
         list2 = ItemList.insert(db, name="List 2", items=[item2])
         Tag.insert(db, name="expensive", items=[item1])
         Tag.insert(db, name="cheap", items=[item2])

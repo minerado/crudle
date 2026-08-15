@@ -7,8 +7,8 @@ Twin of SQLAlchemy ``update/test_update.py``. Strategies in
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from tests.crudle.adapters.memory.models import Item, ItemList, ItemType, Tag
 from src.crudle.adapters.memory.adapter import NotLoaded
+from tests.crudle.adapters.memory.models import Item, ItemList, ItemType, Tag
 
 
 class TestUpdate:

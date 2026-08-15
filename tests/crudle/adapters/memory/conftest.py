@@ -3,6 +3,7 @@ Pytest configuration for memory adapter tests.
 """
 
 import pytest
+
 from src.crudle.adapters.memory.adapter import MemoryAdapter
 
 

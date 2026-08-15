@@ -9,7 +9,6 @@ Order of operations: filter → sort → distinct_on → skip/limit → select.
 
 from tests.crudle.adapters.memory.models import Item, ItemType
 
-
 # ---------------------------------------------------------------------------
 # Basics
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ These models mirror the SQLAlchemy models but use Pydantic for validation.
 
 from datetime import datetime, timezone
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 

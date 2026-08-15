@@ -76,7 +76,7 @@ class TestUpdateByBasics:
     def test_forwards_on_update_assocs(self, db):
         a = db.insert(Item, name="a", color="red")
         b = db.insert(Item, name="b", color="green")
-        lst = db.insert(ItemList, name="L1", items=[a, b])
+        db.insert(ItemList, name="L1", items=[a, b])
 
         updated = db.update_by(
             ItemList,

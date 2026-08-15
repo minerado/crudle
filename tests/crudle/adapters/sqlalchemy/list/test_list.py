@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from tests.models import Item
 
+
 def test_list_should_return_all_records(db):
     """Test listing all records without filters."""
     # Arrange

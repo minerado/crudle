@@ -1,11 +1,11 @@
 import operator as o
+from typing import Any, ClassVar
+
 from pydantic import BaseModel, computed_field
 from sqlalchemy import Select, text
 from sqlalchemy.sql import func
-from typing import Any, ClassVar
 
 from .helpers import build_tsquery_string
-
 
 OPERATORS = ["eq", "gt", "ge", "lt", "le", "ne", "in", "ni", "q"]
 

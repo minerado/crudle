@@ -1,7 +1,6 @@
 # query_params.py
 
 from datetime import date, datetime
-from pydantic import BaseModel
 from typing import (
     ClassVar,
     Dict,
@@ -13,6 +12,8 @@ from typing import (
     get_origin,
 )
 from uuid import UUID
+
+from pydantic import BaseModel
 
 
 class QueryParamsModel(BaseModel):

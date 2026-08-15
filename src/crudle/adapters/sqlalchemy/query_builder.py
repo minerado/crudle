@@ -1,10 +1,10 @@
 # query_builder.py
 
 from functools import reduce
-from sqlalchemy import Select, case, distinct, or_, select
-from sqlalchemy.sql import func
 from typing import Any
 
+from sqlalchemy import Select, case, distinct, or_, select
+from sqlalchemy.sql import func
 
 from ...utils import flatten_dict
 from .helpers import is_sa_relationship

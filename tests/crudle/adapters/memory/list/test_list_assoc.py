@@ -11,7 +11,6 @@ Invalid association paths return no rows (no raise); SA typically errors.
 
 from tests.crudle.adapters.memory.models import Item, ItemList, ItemType, Tag
 
-
 # ---------------------------------------------------------------------------
 # Cardinality
 # ---------------------------------------------------------------------------

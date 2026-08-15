@@ -11,7 +11,6 @@ Basics, ignored list options, and light combos. Deeper coverage:
 
 from tests.models import Item, ItemList, Tag
 
-
 # ---------------------------------------------------------------------------
 # Basics
 # ---------------------------------------------------------------------------

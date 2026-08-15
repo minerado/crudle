@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 
 from tests.models import Item, ItemList, ItemType, Tag
 
-
 # ---------------------------------------------------------------------------
 # Matches — when equality finds rows
 # ---------------------------------------------------------------------------
