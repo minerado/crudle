@@ -292,10 +292,67 @@ class SQLAlchemyAdapter:
         q = cls.build_query(select=["count"], distinct_on=[], **filter_params)
         return db.scalar(q) or 0
 
+    @staticmethod
+    def _attrs_for_upsert_insert(filters, kwargs):
+        """Build insert attrs for the upsert miss path.
+
+        Strips update-only control keys so they are not written as columns.
+        Merges simple equality keys from ``filters`` (and nested
+        ``filter={...}``) when absent from ``kwargs``. Operator keys,
+        dotted association hops, nested / list values, and list-option
+        keys are not merged.
+        """
+        control = {"on_update_assocs", "should_raise"}
+        attrs = {k: v for k, v in kwargs.items() if k not in control}
+        skip = {
+            "filter",
+            "q",
+            "or_",
+            "and_",
+            "not_",
+            "select",
+            "sort",
+            "order_by",
+            "limit",
+            "skip",
+            "preload",
+            "return_dict",
+            "distinct_on",
+            *control,
+        }
+
+        def merge_simple(src):
+            for key, value in src.items():
+                if key == "filter" and isinstance(value, dict):
+                    merge_simple(value)
+                    continue
+                if (
+                    key in skip
+                    or "__" in key
+                    or "." in key
+                    or isinstance(value, (dict, list))
+                ):
+                    continue
+                attrs.setdefault(key, value)
+
+        merge_simple(filters or {})
+        return attrs
+
     @classmethod
     def upsert_by(cls, db: Session, filters, **kwargs):
-        """Update or insert an instance based on specified filters."""
-        return cls.update_by(db, filters, **kwargs) or cls.insert(db, **kwargs)
+        """Update exactly one match, or insert if none match.
+
+        ``filters`` uses the ``get_by`` dialect (``MultipleResultsFound`` on
+        ambiguity). On miss, simple equality filter keys merge into insert
+        attrs when absent from ``**kwargs``. ``on_update_assocs`` /
+        ``should_raise`` are not written as columns on insert;
+        ``should_raise=True`` still raises on miss (never inserts).
+        """
+        updated = cls.update_by(db, filters, **kwargs)
+        if updated is not None:
+            return updated
+
+        return cls.insert(db, **cls._attrs_for_upsert_insert(filters, kwargs))
 
     @staticmethod
     def __delete(db: Session, model, commit=True):

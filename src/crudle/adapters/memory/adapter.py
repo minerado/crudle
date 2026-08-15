@@ -1746,8 +1746,60 @@ class MemoryAdapter(AdapterInterface):
 
         return result
 
+    @staticmethod
+    def _attrs_for_upsert_insert(filters: Dict[str, Any], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Build insert attrs for the upsert miss path.
+
+        Strips update-only control keys so they are not written as fields.
+        Merges simple equality keys from ``filters`` (and nested
+        ``filter={...}``) when absent from ``kwargs``. Operator keys,
+        dotted association hops, nested / list values, and list-option
+        keys are not merged.
+        """
+        control = {"on_update_assocs", "should_raise"}
+        attrs = {k: v for k, v in kwargs.items() if k not in control}
+        skip = {
+            "filter",
+            "q",
+            "or_",
+            "and_",
+            "not_",
+            "select",
+            "sort",
+            "order_by",
+            "limit",
+            "skip",
+            "preload",
+            "return_dict",
+            "distinct_on",
+            *control,
+        }
+
+        def merge_simple(src: Dict[str, Any]) -> None:
+            for key, value in src.items():
+                if key == "filter" and isinstance(value, dict):
+                    merge_simple(value)
+                    continue
+                if (
+                    key in skip
+                    or "__" in key
+                    or "." in key
+                    or isinstance(value, (dict, list))
+                ):
+                    continue
+                attrs.setdefault(key, value)
+
+        merge_simple(filters or {})
+        return attrs
+
     def upsert_by(self, model: Type, filters: Dict[str, Any], **kwargs) -> Any:
-        """Update or insert a record based on filters.
+        """Update exactly one match, or insert if none match.
+
+        ``filters`` uses the ``get_by`` dialect (``MultipleResultsFound`` on
+        ambiguity). On miss, simple equality filter keys merge into insert
+        attrs when absent from ``**kwargs``. ``on_update_assocs`` /
+        ``should_raise`` are not written as fields on insert;
+        ``should_raise=True`` still raises on miss (never inserts).
 
         Args:
             model: The model class
@@ -1761,7 +1813,7 @@ class MemoryAdapter(AdapterInterface):
         if updated is not None:
             return updated
 
-        return self.insert(model, **kwargs)
+        return self.insert(model, **self._attrs_for_upsert_insert(filters, kwargs))
 
     def delete(self, model: Type, id: Union[str, int]) -> Optional[Any]:
         """Delete a record by ID (Ecto ``:nothing`` for related rows).
