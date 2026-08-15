@@ -9,7 +9,7 @@ Without the env var, postgres-marked tests are skipped.
 
 SQLite does not support ``DISTINCT ON``. The empty ``distinct_on=[]`` noop
 runs on the default SQLite fixture. Memory owns a full in-process twin in
-``tests/crudle/adapters/memory/test_list_distinct_on.py``.
+``tests/crudle/adapters/memory/list/test_list_distinct_on.py``.
 """
 
 import pytest
