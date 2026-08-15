@@ -2,7 +2,19 @@ from typing import Any, Dict, List, Optional, Type, Union, get_origin, get_args
 from datetime import datetime, timezone
 import inspect
 from pydantic import BaseModel, ValidationError
+from sqlalchemy.exc import IntegrityError, MultipleResultsFound
+
 from ...core.interface import AdapterInterface
+from ...utils import flatten_dict
+
+
+ALLOWED_OPERATORS = ["eq", "gt", "ge", "lt", "le", "ne", "in", "ni", "q"]
+DEFAULT_QUERY_LIMIT = 25
+ON_UPDATE_ASSOC_OPTIONS = {
+    "raise": "raise",
+    "nilify_all": "nilify_all",
+    "delete_all": "delete_all",
+}
 
 
 class NotLoaded:
@@ -695,36 +707,45 @@ class MemoryAdapter(AdapterInterface):
         # Return a copy to prevent direct mutation
         return self._create_immutable_copy(instance)
 
-    def _update_instance(self, instance: Any, **kwargs) -> Any:
-        """Update an instance with new data."""
-        # Handle Pydantic models
+    def _update_instance(
+        self, instance: Any, on_update_assocs: str = "raise", **kwargs
+    ) -> Any:
+        """Update an instance with new data, applying association strategies."""
+        if on_update_assocs not in ON_UPDATE_ASSOC_OPTIONS:
+            raise ValueError(
+                f"Invalid on_update_assocs '{on_update_assocs}'. "
+                f"Expected one of {list(ON_UPDATE_ASSOC_OPTIONS)}"
+            )
+
         if isinstance(instance, BaseModel):
             try:
-                # Process nested relationships in the update data
+                relationships = self._infer_relationships(type(instance))
+                # Work on the stored instance (already the live object)
+                live = self._ensure_model_data(type(instance))[instance.id]
+                live = self._preload_all_relationships(live)
+
+                for field_name, rel_info in relationships.items():
+                    if field_name in kwargs:
+                        self._apply_on_update_assocs(
+                            live, field_name, kwargs[field_name], rel_info, on_update_assocs
+                        )
+
                 processed_kwargs = self._process_nested_relationships(
                     type(instance), kwargs
                 )
 
-                # Create a copy of the instance to preserve NotLoaded relationships
-                updated_instance = instance.model_copy()
+                updated_instance = live.model_copy()
 
-                # Update only the fields that are explicitly provided
                 for key, value in processed_kwargs.items():
-                    if key != "id":  # Don't allow ID changes
+                    if key != "id":
                         setattr(updated_instance, key, value)
 
-                # Validate the updated instance by creating a new one with the updated data
-                # This will trigger Pydantic validation
                 validation_data = self._get_serializable_data(
                     updated_instance, preserve_notloaded=False
                 )
-                # Create a temporary instance to validate the data
-                temp_instance = type(instance)(**validation_data)
+                type(instance)(**validation_data)
 
-                # Set foreign keys on related objects
                 self._set_foreign_keys(updated_instance, processed_kwargs)
-
-                # Update stored instance
                 self._ensure_model_data(type(instance))[instance.id] = updated_instance
 
                 return updated_instance
@@ -733,16 +754,96 @@ class MemoryAdapter(AdapterInterface):
                     f"Validation error updating {type(instance).__name__}: {e}"
                 )
         else:
-            # Fallback for non-Pydantic models
             for key, value in kwargs.items():
-                if key != "id":  # Don't allow ID changes
+                if key != "id":
                     setattr(instance, key, value)
 
-            # Update metadata
             if hasattr(instance, "_metadata"):
-                instance._metadata["updated_at"] = datetime.utcnow().isoformat()
+                instance._metadata["updated_at"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
 
             return instance
+
+    def _apply_on_update_assocs(
+        self,
+        instance: Any,
+        field_name: str,
+        values: Any,
+        rel_info: Dict[str, Any],
+        on_update: str,
+    ) -> None:
+        """Apply raise / delete_all / nilify_all before replacing a relationship."""
+        related_model = rel_info["related_model"]
+        is_list = rel_info["is_list"]
+        current = getattr(instance, field_name, None)
+        if isinstance(current, NotLoaded):
+            current = self._load_relationship(instance, field_name, rel_info)
+            setattr(instance, field_name, current)
+
+        if is_list:
+            if values is None:
+                values = []
+            if not isinstance(values, list):
+                raise ValueError(
+                    f"Invalid association value for '{field_name}': "
+                    f"expected list, got {type(values).__name__}"
+                )
+
+            current_list = current if isinstance(current, list) else []
+            existing_ids = {obj.id for obj in current_list if getattr(obj, "id", None)}
+            new_ids = set()
+            for item in values:
+                if isinstance(item, dict) and item.get("id"):
+                    new_ids.add(item["id"])
+                elif hasattr(item, "id") and item.id:
+                    new_ids.add(item.id)
+
+            removing = existing_ids - new_ids
+
+            if on_update == "raise" and removing:
+                raise IntegrityError(
+                    f"Cannot update {field_name} when on_update='raise'. "
+                    f"Trying to remove existing associations. "
+                    f"Use on_update='nilify_all' or 'delete_all' to allow updates.",
+                    params=None,
+                    orig=None,
+                )
+
+            if on_update == "delete_all":
+                for obj in list(current_list):
+                    if obj.id in removing:
+                        related_store = self._ensure_model_data(related_model)
+                        related_store.pop(obj.id, None)
+
+            elif on_update == "nilify_all":
+                fk_field = self._get_foreign_key_field_name(
+                    field_name, type(instance)
+                )
+                if fk_field:
+                    for obj in list(current_list):
+                        if obj.id in removing:
+                            stored = self._ensure_model_data(related_model).get(obj.id)
+                            if stored is not None:
+                                setattr(stored, fk_field, None)
+        # Singular relationships: replace freely (FK update); strategies mainly
+        # apply to collection associations per SQLAlchemy usage in README.
+
+    def _normalize_filter_params(self, filters: Dict[str, Any]) -> Dict[str, Any]:
+        """Flatten nested filter dicts to dotted keys (SQLAlchemy parity)."""
+        if not filters:
+            return {}
+        return dict(flatten_dict(filters))
+
+    def _split_field_operation(self, field: str) -> tuple[str, str]:
+        """Split field__op; raise on forbidden operators (SQLAlchemy parity)."""
+        parts = field.split("__")
+        if len(parts) == 2:
+            field_name, operator = parts
+            if operator not in ALLOWED_OPERATORS:
+                raise Exception(f"Forbidden operator: {operator}")
+            return field_name, operator
+        return parts[0], "eq"
 
     def _matches_filters(self, instance: Any, filters: Dict[str, Any]) -> bool:
         """Check if an instance matches the given filters."""
@@ -753,14 +854,11 @@ class MemoryAdapter(AdapterInterface):
 
     def _field_matches(self, instance: Any, field: str, value: Any) -> bool:
         """Check if a field matches a value using various operators."""
-        # Handle nested fields (e.g., "author.name")
+        # Handle nested fields (e.g., "author.name" or "author.name__gt")
         if "." in field:
             return self._nested_field_matches(instance, field, value)
 
-        # Parse field and operator (e.g., "age__gt" -> field="age", operator="gt")
-        field_parts = field.split("__")
-        field_name = field_parts[0]
-        operator = field_parts[1] if len(field_parts) > 1 else "eq"
+        field_name, operator = self._split_field_operation(field)
 
         # Handle Pydantic models
         if isinstance(instance, BaseModel):
@@ -779,6 +877,9 @@ class MemoryAdapter(AdapterInterface):
         self, instance_value: Any, operator: str, filter_value: Any
     ) -> bool:
         """Apply a filter operator to compare instance value with filter value."""
+        if operator not in ALLOWED_OPERATORS:
+            raise Exception(f"Forbidden operator: {operator}")
+
         try:
             if operator == "eq":
                 return instance_value == filter_value
@@ -799,8 +900,7 @@ class MemoryAdapter(AdapterInterface):
             elif operator == "q":
                 return self._text_search(instance_value, filter_value)
             else:
-                # Unknown operator, default to equality
-                return instance_value == filter_value
+                raise Exception(f"Forbidden operator: {operator}")
         except (TypeError, ValueError):
             # If comparison fails (e.g., string vs int), return False
             return False
@@ -950,40 +1050,54 @@ class MemoryAdapter(AdapterInterface):
 
         Returns:
             The model instance or None if not found
+
+        Raises:
+            MultipleResultsFound: If more than one record matches
         """
-        model_data = self._ensure_model_data(model)
-        needs_preload = self._needs_preload_for_filtering(filters)
-
-        for instance in model_data.values():
-            candidate = (
-                self._preload_all_relationships(instance)
-                if needs_preload
-                else instance
+        matches = self._query_instances(model, filters)
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise MultipleResultsFound(
+                f"Multiple rows were found when one or none was required for {model.__name__}"
             )
-            if self._matches_filters(candidate, filters):
-                # Always return a deep copy to prevent direct mutation
-                instance_copy = self._create_immutable_copy(candidate)
 
-                # Set unloaded relationships to NotLoaded for lazy loading
-                if not needs_preload:
-                    self._set_unloaded_relationships(instance_copy)
+        instance = matches[0]
+        instance_copy = self._create_immutable_copy(instance)
+        self._set_unloaded_relationships(instance_copy)
 
-                if preload:
-                    instance_copy = self._preload_relationships(instance_copy, preload)
+        if preload:
+            instance_copy = self._preload_relationships(instance_copy, preload)
 
-                # Log query
-                self._query_history.append(
-                    {
-                        "operation": "get_by",
-                        "model": model.__name__,
-                        "filters": filters,
-                        "preload": preload or [],
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                )
-                return instance_copy
+        self._query_history.append(
+            {
+                "operation": "get_by",
+                "model": model.__name__,
+                "filters": filters,
+                "preload": preload or [],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        return instance_copy
 
-        return None
+    def _query_instances(
+        self, model: Type, filters: Dict[str, Any] | None = None
+    ) -> List[Any]:
+        """Filter stored instances without pagination (used by get_by/count/list)."""
+        filter_params = self._normalize_filter_params(filters or {})
+        model_data = self._ensure_model_data(model)
+        instances = list(model_data.values())
+
+        if not filter_params:
+            return instances
+
+        needs_preload = self._needs_preload_for_filtering(filter_params)
+        if needs_preload:
+            instances = [self._preload_all_relationships(inst) for inst in instances]
+
+        return [
+            inst for inst in instances if self._matches_filters(inst, filter_params)
+        ]
 
     def list(self, model: Type, preload: List[str] = None, **filters) -> List[Any]:
         """List records with optional filters.
@@ -991,12 +1105,11 @@ class MemoryAdapter(AdapterInterface):
         Args:
             model: The model class
             preload: List of relationships to preload
-            **filters: Filter criteria and special parameters (sort, limit, skip, select, return_dict)
+            **filters: Filter criteria and special parameters (sort, limit, skip, select, return_dict, distinct_on)
 
         Returns:
             List of model instances
         """
-        # Extract special parameters that are not filters
         special_params = {}
         filter_params = {}
 
@@ -1006,64 +1119,39 @@ class MemoryAdapter(AdapterInterface):
             else:
                 filter_params[key] = value
 
-        model_data = self._ensure_model_data(model)
-        instances = list(model_data.values())
+        needs_preload = self._needs_preload_for_filtering(
+            self._normalize_filter_params(filter_params)
+        )
+        instances = self._query_instances(model, filter_params)
 
-        # Check if we need to preload relationships for nested filtering
-        needs_preload = self._needs_preload_for_filtering(filter_params)
-
-        # Apply filters
-        if filter_params:
-            # If we need preloading for nested filters, preload all relationships first
-            if needs_preload:
-                instances = [
-                    self._preload_all_relationships(inst) for inst in instances
-                ]
-
-            instances = [
-                inst for inst in instances if self._matches_filters(inst, filter_params)
-            ]
-
-        # Apply sorting if requested
         if "sort" in special_params:
             instances = self._apply_sorting(instances, special_params["sort"])
 
-        # Apply pagination if requested
-        if "skip" in special_params:
-            skip = special_params["skip"]
-            instances = instances[skip:]
+        if "distinct_on" in special_params:
+            instances = self._apply_distinct(instances, special_params["distinct_on"])
 
-        if "limit" in special_params:
-            limit = special_params["limit"]
+        skip = special_params.get("skip", 0)
+        limit = special_params.get("limit", DEFAULT_QUERY_LIMIT)
+        if skip:
+            instances = instances[skip:]
+        if limit is not None:
             instances = instances[:limit]
 
-        # Handle field selection and return format
         if "select" in special_params or special_params.get("return_dict", False):
-            # Convert instances to dictionaries with selected fields
             instances = self._apply_field_selection(instances, special_params)
         else:
-            # Only create deep copies and handle relationships for model instances
-            # Always return deep copies to prevent direct mutation
             instances = [self._create_immutable_copy(inst) for inst in instances]
 
-            # If we preloaded for filtering, don't reset relationships to NotLoaded
             if not needs_preload:
-                # Set unloaded relationships to NotLoaded for lazy loading
                 for instance in instances:
                     self._set_unloaded_relationships(instance)
-            else:
-                # If we preloaded for filtering, we need to ensure the relationships are properly loaded
-                # but we don't want to reset them to NotLoaded since they were intentionally loaded
-                pass
 
-            # Preload relationships if requested
             if preload:
                 instances = [
                     self._preload_relationships(instance, preload)
                     for instance in instances
                 ]
 
-        # Log query
         self._query_history.append(
             {
                 "operation": "list",
@@ -1078,6 +1166,40 @@ class MemoryAdapter(AdapterInterface):
 
         return instances
 
+    def _apply_distinct(
+        self, instances: List[Any], distinct_on: Union[bool, List[str]]
+    ) -> List[Any]:
+        """Apply distinct_on semantics (SQLAlchemy/Postgres-style first-row wins)."""
+        if distinct_on is True:
+            seen = set()
+            result = []
+            for inst in instances:
+                key = getattr(inst, "id", id(inst))
+                if key in seen:
+                    continue
+                seen.add(key)
+                result.append(inst)
+            return result
+
+        if not distinct_on:
+            return instances
+
+        seen = set()
+        result = []
+        for inst in instances:
+            key_parts = []
+            for field in distinct_on:
+                if "." in field:
+                    key_parts.append(self._get_nested_field_value(inst, field))
+                else:
+                    key_parts.append(getattr(inst, field, None))
+            key = tuple(key_parts)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(inst)
+        return result
+
     def _apply_sorting(
         self, instances: List[Any], sort_specs: List[Dict[str, str]]
     ) -> List[Any]:
@@ -1089,19 +1211,22 @@ class MemoryAdapter(AdapterInterface):
                 field = spec["field"]
                 order = spec.get("order", "asc")
 
-                # Get the field value
-                if hasattr(instance, field):
+                if "." in field:
+                    value = self._get_nested_field_value(instance, field)
+                elif hasattr(instance, field):
                     value = getattr(instance, field)
                 else:
                     value = None
 
-                # Handle None values (put them at the end)
                 if value is None:
                     value = float("inf") if order == "asc" else float("-inf")
 
-                # Reverse for descending order
                 if order == "desc":
-                    value = -value if isinstance(value, (int, float)) else value
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        value = -value
+                    elif isinstance(value, str):
+                        # Approximate desc for strings via reverse sort marker
+                        value = tuple(-ord(c) for c in value)
 
                 key_values.append(value)
 
@@ -1300,12 +1425,17 @@ class MemoryAdapter(AdapterInterface):
         Args:
             model: The model class
             *args: Positional arguments (first one is treated as id)
-            **kwargs: Attributes to update (including id if passed as keyword)
+            **kwargs: Attributes to update (including id if passed as keyword).
+                Also accepts on_update_assocs and commit (commit ignored).
 
         Returns:
             The updated model instance or None if not found
         """
-        # Get the ID from either positional args or kwargs
+        on_update_assocs = kwargs.pop(
+            "on_update_assocs", ON_UPDATE_ASSOC_OPTIONS["raise"]
+        )
+        kwargs.pop("commit", None)  # session concept; ignored for Memory
+
         if args:
             id = args[0]
         elif "id" in kwargs:
@@ -1313,13 +1443,14 @@ class MemoryAdapter(AdapterInterface):
         else:
             return None
 
-        instance = self.get(model, id)
-        if instance is None:
+        stored = self._ensure_model_data(model).get(self._normalize_id(id))
+        if stored is None:
             return None
 
-        updated_instance = self._update_instance(instance, **kwargs)
+        updated_instance = self._update_instance(
+            stored, on_update_assocs=on_update_assocs, **kwargs
+        )
 
-        # Log query
         self._query_history.append(
             {
                 "operation": "update",
@@ -1330,45 +1461,55 @@ class MemoryAdapter(AdapterInterface):
             }
         )
 
-        # Return a copy to prevent direct mutation
-        # Only set relationships to NotLoaded if they weren't explicitly updated
         result = self._create_immutable_copy(updated_instance)
 
-        # Check if any relationships were explicitly updated
         relationships = self._infer_relationships(type(updated_instance))
-        updated_relationships = set()
+        updated_relationships = {name for name in relationships if name in kwargs}
 
-        for field_name in relationships.keys():
-            if field_name in kwargs:
-                updated_relationships.add(field_name)
-
-        # Set unloaded relationships, but preserve explicitly updated ones
-        for field_name, rel_info in relationships.items():
+        for field_name in relationships:
             if field_name not in updated_relationships:
                 setattr(result, field_name, NotLoaded())
 
         return result
 
     def update_by(
-        self, model: Type, filters: Dict[str, Any], **kwargs
+        self,
+        model: Type,
+        filters: Dict[str, Any],
+        should_raise: bool = False,
+        **kwargs,
     ) -> Optional[Any]:
         """Update a record by specified filters.
 
         Args:
             model: The model class
             filters: Filter criteria to find the record
-            **kwargs: Attributes to update
+            should_raise: Raise if no record found
+            **kwargs: Attributes to update (on_update_assocs / commit supported)
 
         Returns:
             The updated model instance or None if not found
         """
-        instance = self.get_by(model, **filters)
+        on_update_assocs = kwargs.pop(
+            "on_update_assocs", ON_UPDATE_ASSOC_OPTIONS["raise"]
+        )
+        kwargs.pop("commit", None)
+
+        try:
+            instance = self.get_by(model, **filters)
+        except MultipleResultsFound:
+            raise
+
         if instance is None:
+            if should_raise:
+                raise ValueError(f"No {model.__name__} found matching filters: {filters}")
             return None
 
-        updated_instance = self._update_instance(instance, **kwargs)
+        stored = self._ensure_model_data(model).get(instance.id)
+        updated_instance = self._update_instance(
+            stored, on_update_assocs=on_update_assocs, **kwargs
+        )
 
-        # Log query
         self._query_history.append(
             {
                 "operation": "update_by",
@@ -1379,20 +1520,12 @@ class MemoryAdapter(AdapterInterface):
             }
         )
 
-        # Return a copy to prevent direct mutation
-        # Only set relationships to NotLoaded if they weren't explicitly updated
         result = self._create_immutable_copy(updated_instance)
 
-        # Check if any relationships were explicitly updated
         relationships = self._infer_relationships(type(updated_instance))
-        updated_relationships = set()
+        updated_relationships = {name for name in relationships if name in kwargs}
 
-        for field_name in relationships.keys():
-            if field_name in kwargs:
-                updated_relationships.add(field_name)
-
-        # Set unloaded relationships, but preserve explicitly updated ones
-        for field_name, rel_info in relationships.items():
+        for field_name in relationships:
             if field_name not in updated_relationships:
                 setattr(result, field_name, NotLoaded())
 
@@ -1409,12 +1542,10 @@ class MemoryAdapter(AdapterInterface):
         Returns:
             The updated or created model instance
         """
-        # Try to update first
         updated = self.update_by(model, filters, **kwargs)
         if updated is not None:
             return updated
 
-        # If not found, create new
         return self.insert(model, **kwargs)
 
     def delete(self, model: Type, id: Union[str, int]) -> Optional[Any]:
@@ -1434,7 +1565,6 @@ class MemoryAdapter(AdapterInterface):
         model_data = self._ensure_model_data(model)
         instance = model_data.pop(normalized_id, None)
 
-        # Log query
         self._query_history.append(
             {
                 "operation": "delete",
@@ -1444,7 +1574,6 @@ class MemoryAdapter(AdapterInterface):
             }
         )
 
-        # Return a copy of the deleted instance
         return self._create_immutable_copy(instance) if instance else None
 
     def delete_by(self, model: Type, **filters) -> Optional[Any]:
@@ -1456,16 +1585,17 @@ class MemoryAdapter(AdapterInterface):
 
         Returns:
             The deleted model instance or None if not found
+
+        Raises:
+            MultipleResultsFound: If more than one record matches
         """
         instance = self.get_by(model, **filters)
         if instance is None:
             return None
 
-        # Delete the instance
         model_data = self._ensure_model_data(model)
         deleted_instance = model_data.pop(instance.id, None)
 
-        # Log query
         self._query_history.append(
             {
                 "operation": "delete_by",
@@ -1475,7 +1605,6 @@ class MemoryAdapter(AdapterInterface):
             }
         )
 
-        # Return a copy of the deleted instance
         return (
             self._create_immutable_copy(deleted_instance) if deleted_instance else None
         )
@@ -1485,8 +1614,8 @@ class MemoryAdapter(AdapterInterface):
 
         Args:
             model: The model class
-            field: Optional field for API parity with SQLAlchemy. Invalid fields
-                are ignored and all matching records are counted.
+            field: Optional field to count non-null values for (dotted paths OK).
+                Invalid fields fall back to counting all matches.
             **filters: Filter criteria (pagination/sort/select params are ignored)
 
         Returns:
@@ -1500,16 +1629,35 @@ class MemoryAdapter(AdapterInterface):
             "return_dict",
             "distinct_on",
         }
-        # `field` is accepted for SQLAlchemy API parity. Invalid/valid fields both
-        # count matching records; SQLAlchemy falls back the same way for bad fields.
         filter_params = {
             key: value for key, value in filters.items() if key not in ignored_params
         }
 
-        instances = self.list(model, **filter_params)
-        result_count = len(instances)
+        instances = self._query_instances(model, filter_params)
 
-        # Log query
+        if field:
+            if self._is_valid_count_field(model, field):
+                counted = 0
+                for inst in instances:
+                    # Ensure relationships available for dotted fields
+                    candidate = (
+                        self._preload_all_relationships(inst)
+                        if "." in field
+                        else inst
+                    )
+                    value = (
+                        self._get_nested_field_value(candidate, field)
+                        if "." in field
+                        else getattr(candidate, field, None)
+                    )
+                    if value is not None and not isinstance(value, NotLoaded):
+                        counted += 1
+                result_count = counted
+            else:
+                result_count = len(instances)
+        else:
+            result_count = len(instances)
+
         self._query_history.append(
             {
                 "operation": "count",
@@ -1522,6 +1670,22 @@ class MemoryAdapter(AdapterInterface):
         )
 
         return result_count
+
+    def _is_valid_count_field(self, model: Type, field: str) -> bool:
+        """Return True if field exists on model or as a dotted relationship path."""
+        if "." in field:
+            parts = field.split(".", 1)
+            rel_name, nested = parts[0], parts[1]
+            relationships = self._infer_relationships(model)
+            if rel_name not in relationships:
+                return False
+            related = relationships[rel_name]["related_model"]
+            if "." in nested:
+                return self._is_valid_count_field(related, nested)
+            return nested in getattr(related, "model_fields", {})
+        if issubclass(model, BaseModel):
+            return field in model.model_fields
+        return hasattr(model, field)
 
     def get_query_history(self) -> List[Dict[str, Any]]:
         """Get the query history for debugging.

@@ -35,22 +35,15 @@ def test_update_by_should_return_none_if_no_match(db):
     assert result is None
 
 
-def test_update_by_should_update_first_match(db):
-    """Test that only the first matching record is updated."""
-    # Arrange
-    item1 = db.insert(Item, name="Test Item", color="red", price=100)
-    item2 = db.insert(Item, name="Test Item", color="blue", price=200)
+def test_update_by_should_raise_on_multiple_matches(db):
+    """Test that update_by raises when multiple records match."""
+    from sqlalchemy.exc import MultipleResultsFound
 
-    # Act
-    updated_item = db.update_by(Item, {"name": "Test Item"}, price=300)
+    db.insert(Item, name="Test Item", color="red", price=100)
+    db.insert(Item, name="Test Item", color="blue", price=200)
 
-    # Assert
-    assert updated_item is not None
-    assert updated_item.price == 300
-    # Only one item should be updated
-    items = db.list(Item, name="Test Item")
-    updated_count = sum(1 for item in items if item.price == 300)
-    assert updated_count == 1
+    with pytest.raises(MultipleResultsFound):
+        db.update_by(Item, {"name": "Test Item"}, price=300)
 
 
 def test_update_by_should_handle_multiple_filters(db):
@@ -71,17 +64,18 @@ def test_update_by_should_handle_multiple_filters(db):
 
 
 def test_update_by_should_handle_operator_filters(db):
-    """Test updating with operator filters."""
-    # Arrange
+    """Test updating with operator filters that uniquely match."""
     item1 = db.insert(Item, name="Item 1", price=100)
     item2 = db.insert(Item, name="Item 2", price=200)
     item3 = db.insert(Item, name="Item 3", price=300)
 
-    # Act
-    updated_item = db.update_by(Item, {"price__gt": 150}, name="Expensive Item")
+    updated_item = db.update_by(Item, {"price__gt": 250}, name="Expensive Item")
 
-    # Assert
     assert updated_item is not None
+    assert updated_item.id == item3.id
+    assert updated_item.name == "Expensive Item"
+    assert db.get(Item, item1.id).name == "Item 1"
+    assert db.get(Item, item2.id).name == "Item 2"
     assert updated_item.name == "Expensive Item"
     assert updated_item.price > 150
 
@@ -263,32 +257,24 @@ def test_update_by_should_handle_case_insensitive_filters(db):
 
 
 def test_update_by_should_handle_partial_matches(db):
-    """Test updating with partial text matches."""
-    # Arrange
+    """Test updating with partial text matches that uniquely identify a row."""
     item1 = db.insert(Item, name="Apple iPhone 13", color="red")
-    item2 = db.insert(Item, name="Apple MacBook", color="blue")
-    item3 = db.insert(Item, name="Samsung Galaxy", color="green")
+    item2 = db.insert(Item, name="Samsung Galaxy", color="green")
 
-    # Act
     updated_item = db.update_by(Item, {"name__q": "Apple"}, price=1000)
 
-    # Assert
     assert updated_item is not None
+    assert updated_item.id == item1.id
     assert updated_item.price == 1000
-    assert "Apple" in updated_item.name
+    assert db.get(Item, item2.id).price is None
 
 
 def test_update_by_should_handle_invalid_operators(db):
-    """Test that invalid operators fall back to equality."""
-    # Arrange
-    item = db.insert(Item, name="Test Item", color="red")
+    """Test that invalid operators raise like SQLAlchemy."""
+    db.insert(Item, name="Test Item", color="red")
 
-    # Act
-    updated_item = db.update_by(Item, {"color__invalid_op": "red"}, price=200)
-
-    # Assert
-    assert updated_item is not None
-    assert updated_item.price == 200
+    with pytest.raises(Exception, match="Forbidden operator"):
+        db.update_by(Item, {"color__invalid_op": "red"}, price=200)
 
 
 def test_update_by_should_handle_type_mismatches(db):
@@ -303,23 +289,22 @@ def test_update_by_should_handle_type_mismatches(db):
     assert updated_item is None  # No match due to type mismatch
 
 
-def test_update_by_should_handle_multiple_matches_first_wins(db):
-    """Test that when multiple records match, only the first is updated."""
-    # Arrange
-    item1 = db.insert(Item, name="Test Item", color="red", price=100)
-    item2 = db.insert(Item, name="Test Item", color="red", price=200)
-    item3 = db.insert(Item, name="Test Item", color="red", price=300)
+def test_update_by_should_raise_on_multiple_matches_same_name(db):
+    """Test that when multiple records match, update_by raises."""
+    from sqlalchemy.exc import MultipleResultsFound
 
-    # Act
-    updated_item = db.update_by(Item, {"name": "Test Item", "color": "red"}, price=999)
+    db.insert(Item, name="Test Item", color="red", price=100)
+    db.insert(Item, name="Test Item", color="red", price=200)
+    db.insert(Item, name="Test Item", color="red", price=300)
 
-    # Assert
-    assert updated_item is not None
-    assert updated_item.price == 999
-    # Check that only one item was updated
-    items = db.list(Item, name="Test Item", color="red")
-    updated_count = sum(1 for item in items if item.price == 999)
-    assert updated_count == 1
+    with pytest.raises(MultipleResultsFound):
+        db.update_by(Item, {"name": "Test Item", "color": "red"}, price=999)
+
+
+def test_update_by_should_handle_should_raise(db):
+    """Test should_raise when no record matches."""
+    with pytest.raises(ValueError, match="No Item found"):
+        db.update_by(Item, {"name": "missing"}, should_raise=True, price=1)
 
 
 def test_update_by_should_handle_relationship_replacement(db):

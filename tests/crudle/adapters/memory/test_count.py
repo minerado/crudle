@@ -353,17 +353,13 @@ def test_count_with_deep_nested_filters(db):
     assert count == 1
 
 
-def test_count_with_invalid_operator_falls_back_to_equality(db):
-    """Test counting with invalid operator falls back to equality."""
-    # Arrange
+def test_count_with_invalid_operator_raises(db):
+    """Test counting with invalid operator raises like SQLAlchemy."""
     db.insert(Item, name="Item 1", color="red", price=10)
     db.insert(Item, name="Item 2", color="blue", price=20)
 
-    # Act
-    count = db.count(Item, color__invalid_op="red")
-
-    # Assert
-    assert count == 1
+    with pytest.raises(Exception, match="Forbidden operator"):
+        db.count(Item, color__invalid_op="red")
 
 
 def test_count_with_empty_string_filters(db):

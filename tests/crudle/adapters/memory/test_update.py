@@ -275,7 +275,9 @@ def test_update_should_handle_list_relationship_clearing(db):
     assert len(item_list.items) == 2
 
     # Act
-    updated_list = db.update(ItemList, item_list.id, items=[])
+    updated_list = db.update(
+        ItemList, item_list.id, items=[], on_update_assocs="delete_all"
+    )
 
     # Assert
     assert len(updated_list.items) == 0
@@ -291,7 +293,9 @@ def test_update_should_handle_list_relationship_replacement(db):
     assert len(item_list.items) == 2
 
     # Act
-    updated_list = db.update(ItemList, item_list.id, items=[item3])
+    updated_list = db.update(
+        ItemList, item_list.id, items=[item3], on_update_assocs="delete_all"
+    )
 
     # Assert
     assert len(updated_list.items) == 1

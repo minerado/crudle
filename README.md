@@ -46,6 +46,13 @@ user.delete(db)
 
 ### Memory adapter (testing)
 
+Same query dialect as SQLAlchemy (`field__op`, nested `.` paths, default `limit=25`,
+`sort` / `skip` / `select` / `distinct_on`, `on_update_assocs`), with an instance-style API
+for Pydantic models. Intended for tests and small local projects — not production storage.
+
+**Memory-only differences:** no `commit` (ignored if passed), no custom `Queries` /
+`search_fields`, and `q` is case-insensitive substring match (not Postgres FTS).
+
 ```python
 from pydantic import BaseModel
 from crudle import MemoryAdapter

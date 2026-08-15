@@ -77,13 +77,18 @@ class AdapterInterface(ABC):
 
     @abstractmethod
     def update_by(
-        self, model: Type, filters: Dict[str, Any], **kwargs
+        self,
+        model: Type,
+        filters: Dict[str, Any],
+        should_raise: bool = False,
+        **kwargs,
     ) -> Optional[Any]:
         """Update a record by specified filters.
 
         Args:
             model: The model class
             filters: Filter criteria to find the record
+            should_raise: Whether to raise if no record is found
             **kwargs: Attributes to update
 
         Returns:

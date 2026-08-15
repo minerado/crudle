@@ -544,19 +544,52 @@ def test_list_with_text_search_partial_match(db):
     assert item3 not in search_results
 
 
-def test_list_with_invalid_operator_falls_back_to_equality(db):
-    """Test that invalid operators fall back to equality."""
-    # Arrange
-    item1 = db.insert(Item, name="Item 1", color="red")
-    item2 = db.insert(Item, name="Item 2", color="blue")
+def test_list_with_invalid_operator_raises(db):
+    """Test that invalid operators raise like SQLAlchemy."""
+    db.insert(Item, name="Item 1", color="red")
 
-    # Act
-    items = db.list(Item, color__invalid_op="red")
+    with pytest.raises(Exception, match="Forbidden operator"):
+        db.list(Item, color__invalid_op="red")
 
-    # Assert
+
+def test_list_default_limit_is_25(db):
+    """Test README default list limit of 25."""
+    for i in range(30):
+        db.insert(Item, name=f"Item {i}", color="red", price=i)
+
+    items = db.list(Item)
+    assert len(items) == 25
+
+    items_all = db.list(Item, limit=100)
+    assert len(items_all) == 30
+
+
+def test_list_with_distinct_on_fields(db):
+    """Test distinct_on keeps first row per key after sort."""
+    db.insert(Item, name="A", color="red", price=10)
+    db.insert(Item, name="B", color="red", price=20)
+    db.insert(Item, name="C", color="blue", price=30)
+
+    items = db.list(
+        Item,
+        sort=[{"field": "price", "order": "asc"}],
+        distinct_on=["color"],
+        limit=100,
+    )
+    assert len(items) == 2
+    colors = {item.color for item in items}
+    assert colors == {"red", "blue"}
+
+
+def test_list_with_nested_dict_filters(db):
+    """Test nested dict filters are flattened like SQLAlchemy."""
+    item_type = db.insert(ItemType, name="Electronics")
+    db.insert(Item, name="Item 1", color="red", price=10, item_type=item_type)
+    db.insert(Item, name="Item 2", color="blue", price=20)
+
+    items = db.list(Item, **{"item_type": {"name": "Electronics"}})
     assert len(items) == 1
-    assert item1 in items
-    assert item2 not in items
+    assert items[0].name == "Item 1"
 
 
 def test_list_with_mixed_type_comparisons(db):

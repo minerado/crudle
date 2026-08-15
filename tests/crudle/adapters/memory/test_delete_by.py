@@ -37,27 +37,15 @@ def test_delete_by_should_return_none_if_no_match(db):
     assert result is None
 
 
-def test_delete_by_should_delete_first_match(db):
-    """Test that delete_by deletes the first matching record."""
-    # Arrange
-    item1 = db.insert(Item, name="Test Item", color="red", price=10)
-    item2 = db.insert(Item, name="Test Item", color="blue", price=20)
+def test_delete_by_should_raise_on_multiple_matches(db):
+    """Test that delete_by raises when multiple records match."""
+    from sqlalchemy.exc import MultipleResultsFound
 
-    # Act
-    deleted_item = db.delete_by(Item, name="Test Item")
+    db.insert(Item, name="Test Item", color="red", price=10)
+    db.insert(Item, name="Test Item", color="blue", price=20)
 
-    # Assert
-    assert deleted_item is not None
-    # Should delete the first one found
-    assert deleted_item.id == item1.id
-
-    # Verify it's actually deleted
-    retrieved_item1 = db.get(Item, item1.id)
-    assert retrieved_item1 is None
-
-    # The second item should still exist
-    retrieved_item2 = db.get(Item, item2.id)
-    assert retrieved_item2 is not None
+    with pytest.raises(MultipleResultsFound):
+        db.delete_by(Item, name="Test Item")
 
 
 def test_delete_by_should_handle_multiple_filters(db):
@@ -86,23 +74,23 @@ def test_delete_by_should_handle_multiple_filters(db):
 
 
 def test_delete_by_should_handle_operator_filters(db):
-    """Test deleting with operator filters."""
+    """Test deleting with operator filters that uniquely match."""
     # Arrange
     item1 = db.insert(Item, name="Item 1", color="red", price=10)
     item2 = db.insert(Item, name="Item 2", color="blue", price=20)
     item3 = db.insert(Item, name="Item 3", color="green", price=30)
 
     # Act
-    deleted_item = db.delete_by(Item, price__gt=15)
+    deleted_item = db.delete_by(Item, price__gt=25)
 
     # Assert
     assert deleted_item is not None
-    # Should delete the first item with price > 15
-    assert deleted_item.price > 15
+    assert deleted_item.id == item3.id
 
-    # Verify it's actually deleted
-    retrieved_item = db.get(Item, deleted_item.id)
+    retrieved_item = db.get(Item, item3.id)
     assert retrieved_item is None
+    assert db.get(Item, item1.id) is not None
+    assert db.get(Item, item2.id) is not None
 
 
 def test_delete_by_should_handle_complex_filters(db):
@@ -125,23 +113,21 @@ def test_delete_by_should_handle_complex_filters(db):
 
 
 def test_delete_by_should_handle_relationship_filters(db):
-    """Test deleting with relationship filters."""
+    """Test deleting with relationship filters that uniquely match."""
+    from sqlalchemy.exc import MultipleResultsFound
+
     # Arrange
     item_type = db.insert(ItemType, name="Electronics")
     item1 = db.insert(Item, name="Item 1", color="red", price=10, item_type=item_type)
     item2 = db.insert(Item, name="Item 2", color="blue", price=20, item_type=item_type)
 
-    # Act
-    deleted_item = db.delete_by(Item, **{"item_type.name": "Electronics"})
+    with pytest.raises(MultipleResultsFound):
+        db.delete_by(Item, **{"item_type.name": "Electronics"})
 
-    # Assert
+    deleted_item = db.delete_by(Item, name="Item 1", **{"item_type.name": "Electronics"})
     assert deleted_item is not None
-    # Should delete the first item with the relationship
-    assert deleted_item.id in [item1.id, item2.id]
-
-    # Verify it's actually deleted
-    retrieved_item = db.get(Item, deleted_item.id)
-    assert retrieved_item is None
+    assert deleted_item.id == item1.id
+    assert db.get(Item, item2.id) is not None
 
 
 def test_delete_by_should_handle_nested_relationship_filters(db):
@@ -221,21 +207,11 @@ def test_delete_by_should_handle_partial_matches(db):
 
 
 def test_delete_by_should_handle_invalid_operators(db):
-    """Test deleting with invalid operators falls back to equality."""
-    # Arrange
-    item1 = db.insert(Item, name="Test Item", color="red", price=10)
-    item2 = db.insert(Item, name="Other Item", color="blue", price=20)
+    """Test deleting with invalid operators raises."""
+    db.insert(Item, name="Test Item", color="red", price=10)
 
-    # Act
-    deleted_item = db.delete_by(Item, name__invalid_op="Test Item")
-
-    # Assert
-    assert deleted_item is not None
-    assert deleted_item.name == "Test Item"
-
-    # Verify it's actually deleted
-    retrieved_item = db.get(Item, deleted_item.id)
-    assert retrieved_item is None
+    with pytest.raises(Exception, match="Forbidden operator"):
+        db.delete_by(Item, name__invalid_op="Test Item")
 
 
 def test_delete_by_should_handle_type_mismatches(db):
@@ -257,47 +233,35 @@ def test_delete_by_should_handle_type_mismatches(db):
     assert retrieved_item2 is not None
 
 
-def test_delete_by_should_handle_multiple_matches_first_wins(db):
-    """Test that delete_by deletes only the first match when multiple exist."""
-    # Arrange
-    item1 = db.insert(Item, name="Test Item", color="red", price=10)
-    item2 = db.insert(Item, name="Test Item", color="blue", price=20)
-    item3 = db.insert(Item, name="Test Item", color="green", price=30)
+def test_delete_by_should_raise_on_multiple_matches_same_filters(db):
+    """Test that delete_by raises when multiple records match."""
+    from sqlalchemy.exc import MultipleResultsFound
 
-    # Act
-    deleted_item = db.delete_by(Item, name="Test Item")
+    db.insert(Item, name="Test Item", color="red", price=10)
+    db.insert(Item, name="Test Item", color="blue", price=20)
+    db.insert(Item, name="Test Item", color="green", price=30)
 
-    # Assert
-    assert deleted_item is not None
-    assert deleted_item.id == item1.id  # First match
-
-    # Verify only the first is deleted
-    retrieved_item1 = db.get(Item, item1.id)
-    retrieved_item2 = db.get(Item, item2.id)
-    retrieved_item3 = db.get(Item, item3.id)
-
-    assert retrieved_item1 is None
-    assert retrieved_item2 is not None
-    assert retrieved_item3 is not None
+    with pytest.raises(MultipleResultsFound):
+        db.delete_by(Item, name="Test Item")
 
 
 def test_delete_by_should_handle_empty_filters(db):
-    """Test deleting with empty filters."""
-    # Arrange
-    item1 = db.insert(Item, name="Item 1", color="red", price=10)
-    item2 = db.insert(Item, name="Item 2", color="blue", price=20)
+    """Test deleting with empty filters raises when multiple rows exist."""
+    from sqlalchemy.exc import MultipleResultsFound
 
-    # Act
-    deleted_item = db.delete_by(Item, **{})
+    db.insert(Item, name="Item 1", color="red", price=10)
+    db.insert(Item, name="Item 2", color="blue", price=20)
 
-    # Assert
-    assert deleted_item is not None
-    # Should delete the first item found
-    assert deleted_item.id in [item1.id, item2.id]
+    with pytest.raises(MultipleResultsFound):
+        db.delete_by(Item, **{})
 
-    # Verify it's actually deleted
-    retrieved_item = db.get(Item, deleted_item.id)
-    assert retrieved_item is None
+    # Single row: empty filters succeed
+    db.clear_data()
+    item = db.insert(Item, name="Only", color="red", price=10)
+    deleted = db.delete_by(Item, **{})
+    assert deleted is not None
+    assert deleted.id == item.id
+    assert db.get(Item, item.id) is None
 
 
 def test_delete_by_should_handle_none_values(db):
@@ -560,41 +524,28 @@ def test_delete_by_should_handle_float_value_filters(db):
 
 
 def test_delete_by_should_handle_list_filters(db):
-    """Test deleting with list filters."""
-    # Arrange
+    """Test deleting with list filters that uniquely match."""
     item1 = db.insert(Item, name="Item 1", color="red", price=10)
     item2 = db.insert(Item, name="Item 2", color="blue", price=20)
     item3 = db.insert(Item, name="Item 3", color="green", price=30)
 
-    # Act
-    deleted_item = db.delete_by(Item, color__in=["red", "blue"])
-
-    # Assert
+    deleted_item = db.delete_by(Item, color__in=["red"])
     assert deleted_item is not None
-    assert deleted_item.color in ["red", "blue"]
-
-    # Verify it's actually deleted
-    retrieved_item = db.get(Item, deleted_item.id)
-    assert retrieved_item is None
+    assert deleted_item.id == item1.id
+    assert db.get(Item, item2.id) is not None
+    assert db.get(Item, item3.id) is not None
 
 
 def test_delete_by_should_handle_negation_filters(db):
-    """Test deleting with negation filters."""
-    # Arrange
+    """Test deleting with negation filters that uniquely match."""
     item1 = db.insert(Item, name="Item 1", color="red", price=10)
     item2 = db.insert(Item, name="Item 2", color="blue", price=20)
-    item3 = db.insert(Item, name="Item 3", color="green", price=30)
 
-    # Act
     deleted_item = db.delete_by(Item, color__ne="red")
-
-    # Assert
     assert deleted_item is not None
-    assert deleted_item.color != "red"
-
-    # Verify it's actually deleted
-    retrieved_item = db.get(Item, deleted_item.id)
-    assert retrieved_item is None
+    assert deleted_item.id == item2.id
+    assert db.get(Item, item1.id) is not None
+    assert db.get(Item, item2.id) is None
 
 
 def test_delete_by_should_handle_range_filters(db):
@@ -663,23 +614,19 @@ def test_delete_by_should_handle_empty_database(db):
 
 
 def test_delete_by_should_handle_multiple_deletions(db):
-    """Test deleting multiple records with multiple calls."""
-    # Arrange
+    """Test deleting multiple records with multiple unique calls."""
     item1 = db.insert(Item, name="Test Item", color="red", price=10)
     item2 = db.insert(Item, name="Test Item", color="blue", price=20)
     item3 = db.insert(Item, name="Other Item", color="green", price=30)
 
-    # Act
-    deleted1 = db.delete_by(Item, name="Test Item")
-    deleted2 = db.delete_by(Item, name="Test Item")
+    deleted1 = db.delete_by(Item, name="Test Item", color="red")
+    deleted2 = db.delete_by(Item, name="Test Item", color="blue")
     deleted3 = db.delete_by(Item, name="Other Item")
 
-    # Assert
     assert deleted1 is not None
     assert deleted2 is not None
     assert deleted3 is not None
 
-    # All should be deleted
     assert db.get(Item, item1.id) is None
     assert db.get(Item, item2.id) is None
     assert db.get(Item, item3.id) is None
