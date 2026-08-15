@@ -846,11 +846,66 @@ class MemoryAdapter(AdapterInterface):
         return parts[0], "eq"
 
     def _matches_filters(self, instance: Any, filters: Dict[str, Any]) -> bool:
-        """Check if an instance matches the given filters."""
+        """Check if an instance matches the given filters.
+
+        Nested filters that share a relationship prefix (e.g. ``items.color`` and
+        ``items.price__gt``) must be satisfied by the **same** related row —
+        SQLAlchemy join + WHERE semantics — not by different children independently.
+        """
+        if not filters:
+            return True
+
+        root_filters: Dict[str, Any] = {}
+        nested_by_relationship: Dict[str, Dict[str, Any]] = {}
+
         for field, value in filters.items():
+            if "." in field:
+                relationship_field, nested_field = field.split(".", 1)
+                nested_by_relationship.setdefault(relationship_field, {})[
+                    nested_field
+                ] = value
+            else:
+                root_filters[field] = value
+
+        for field, value in root_filters.items():
             if not self._field_matches(instance, field, value):
                 return False
+
+        for relationship_field, nested_filters in nested_by_relationship.items():
+            if not self._relationship_matches_filters(
+                instance, relationship_field, nested_filters
+            ):
+                return False
+
         return True
+
+    def _relationship_matches_filters(
+        self,
+        instance: Any,
+        relationship_field: str,
+        nested_filters: Dict[str, Any],
+    ) -> bool:
+        """Match nested filters under one relationship (any-match for collections)."""
+        if not hasattr(instance, relationship_field):
+            return False
+
+        relationship_value = getattr(instance, relationship_field)
+
+        if isinstance(relationship_value, NotLoaded):
+            return False
+
+        if relationship_value is None:
+            return False
+
+        if isinstance(relationship_value, list):
+            if not relationship_value:
+                return False
+            return any(
+                self._matches_filters(related_item, nested_filters)
+                for related_item in relationship_value
+            )
+
+        return self._matches_filters(relationship_value, nested_filters)
 
     def _field_matches(self, instance: Any, field: str, value: Any) -> bool:
         """Check if a field matches a value using various operators."""
