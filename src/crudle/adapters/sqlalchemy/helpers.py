@@ -1,7 +1,7 @@
 import re
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.orm import RelationshipProperty
 from sqlalchemy.sql.elements import BinaryExpression
 
@@ -13,6 +13,16 @@ ON_UPDATE_ASSOC_OPTIONS = {
     "nilify_all": "nilify_all",
     "delete_all": "delete_all",
 }
+
+
+def get_related_or_raise(model_entity, db, related_id):
+    """Load by primary key or raise ``NoResultFound`` (insert/update link-by-id)."""
+    association = model_entity.get(db, related_id)
+    if association is None:
+        raise NoResultFound(
+            f"No {model_entity.__name__} found with id={related_id}"
+        )
+    return association
 
 
 def is_sa_relationship(model, name: str) -> bool:
@@ -647,7 +657,7 @@ def set_attributes_from_dict(
             model_entity = relationship_map[k].entity.entity
 
             if v.get("id"):
-                association = model_entity.get(db, v.get("id"))
+                association = get_related_or_raise(model_entity, db, v.get("id"))
             else:
                 association = model_entity()
                 set_attributes_from_dict(association, v, db, on_update)
@@ -663,7 +673,9 @@ def set_attributes_from_dict(
                 if hasattr(item, "id") and item.id:
                     association.append(item)
                 elif isinstance(item, dict) and item.get("id"):
-                    association.append(model_entity.get(db, item.get("id")))
+                    association.append(
+                        get_related_or_raise(model_entity, db, item.get("id"))
+                    )
                 else:
                     if isinstance(item, dict):
                         nested_model = model_entity()

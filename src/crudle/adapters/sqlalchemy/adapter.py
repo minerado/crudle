@@ -5,6 +5,7 @@ from typing import List
 
 from .helpers import (
     ON_UPDATE_ASSOC_OPTIONS,
+    get_related_or_raise,
     handle_relationship,
     set_attributes_from_dict,
     structure_select_row,
@@ -66,7 +67,15 @@ class SQLAlchemyAdapter:
 
     @classmethod
     def insert(cls, db: Session, commit=True, **kwargs):
-        """Insert a new instance into the database."""
+        """Insert a new instance, optionally with nested associations.
+
+        Relationship values may be model instances, ``{"id": ...}`` links
+        (existing rows are not updated), or create dicts / nested lists.
+        ``None`` kwargs are skipped. Missing ``{"id": ...}`` targets raise
+        ``NoResultFound``. ``commit=False`` adds the graph to the session
+        without ``commit``; primary keys appear after flush (often via
+        ``db.commit()`` when autoflush is off).
+        """
         model = cls.__call__()
         relationship_map = {k: v for k, v in model.__mapper__.relationships.items()}
 
@@ -77,9 +86,11 @@ class SQLAlchemyAdapter:
                 model_entity = relationship_map[k].entity.entity
 
                 if v.get("id"):
-                    association = model_entity.get(db, v.get("id"))
+                    association = get_related_or_raise(model_entity, db, v.get("id"))
                 else:
-                    association = relationship_map[k].entity.entity(**v)
+                    # Same recursive path as list members (nested dicts allowed).
+                    association = model_entity()
+                    set_attributes_from_dict(association, v, db, "nilify_all")
 
                 setattr(model, k, association)
 
@@ -91,10 +102,11 @@ class SQLAlchemyAdapter:
                     if hasattr(item, "id") and item.id:
                         association.append(item)
                     elif isinstance(item, dict) and item.get("id"):
-                        association.append(model_entity.get(db, item.get("id")))
+                        association.append(
+                            get_related_or_raise(model_entity, db, item.get("id"))
+                        )
                     else:
                         if isinstance(item, dict):
-                            # Create the model instance and handle nested relationships
                             nested_model = relationship_map[k].entity.entity()
                             set_attributes_from_dict(
                                 nested_model, item, db, "nilify_all"

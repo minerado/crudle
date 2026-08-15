@@ -167,6 +167,22 @@ class MemoryAdapter(AdapterInterface):
             self._data[model_class] = {}
         return self._data[model_class]
 
+    def _snapshot_store(self) -> Dict[str, Any]:
+        """Shallow-copy per-model id maps and id counters for insert rollback."""
+        return {
+            "data": {
+                model: dict(instances) for model, instances in self._data.items()
+            },
+            "counters": dict(self._counters),
+        }
+
+    def _restore_store(self, snapshot: Dict[str, Any]) -> None:
+        """Restore store + counters after a failed nested insert graph."""
+        self._data = {
+            model: dict(instances) for model, instances in snapshot["data"].items()
+        }
+        self._counters = dict(snapshot["counters"])
+
     def _create_instance(self, model_class: Type, **kwargs) -> Any:
         """Create a model instance with auto-generated ID and metadata."""
         # Generate ID if not provided
@@ -251,17 +267,15 @@ class MemoryAdapter(AdapterInterface):
         if isinstance(item, dict):
             # Check if it's a reference to existing object by ID
             if "id" in item:
-                # Try to get existing object first
                 existing_obj = self.get(related_model, item["id"])
                 if existing_obj:
-                    # If object exists, return it (ignore other fields to prevent updates)
+                    # Existing row: ignore other fields (no update-on-link).
                     return existing_obj
-                else:
-                    # Object doesn't exist, treat as new data
-                    return self._create_instance(related_model, **item)
-            else:
-                # It's new data, create new instance
-                return self._create_instance(related_model, **item)
+                raise ValueError(
+                    f"No {related_model.__name__} found with id={item['id']}"
+                )
+            # New nested data
+            return self._create_instance(related_model, **item)
         elif hasattr(item, "id") and item.id is not None:
             # It's an existing object
             return item
@@ -1074,6 +1088,10 @@ class MemoryAdapter(AdapterInterface):
     def insert(self, model: Type, **kwargs) -> Any:
         """Insert a new record.
 
+        Nested association creates are applied eagerly while building the
+        graph; on failure the store and id counters are restored so partial
+        nested rows are not left behind (SQLAlchemy session rollback parity).
+
         Args:
             model: The model class to insert
             **kwargs: Attributes for the new record
@@ -1081,9 +1099,13 @@ class MemoryAdapter(AdapterInterface):
         Returns:
             The created model instance
         """
-        instance = self._create_instance(model, **kwargs)
+        snapshot = self._snapshot_store()
+        try:
+            instance = self._create_instance(model, **kwargs)
+        except Exception:
+            self._restore_store(snapshot)
+            raise
 
-        # Log query
         self._query_history.append(
             {
                 "operation": "insert",
