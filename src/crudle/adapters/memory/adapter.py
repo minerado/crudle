@@ -1170,6 +1170,11 @@ class MemoryAdapter(AdapterInterface):
         instances = self._query_instances(model, filter_params)
 
         if "sort" in special_params:
+            for spec in special_params["sort"] or []:
+                field = spec.get("field", "")
+                if "." in field:
+                    for inst in instances:
+                        self._preload_select_path(inst, field.split("."))
             instances = self._apply_sorting(instances, special_params["sort"])
 
         if "distinct_on" in special_params:
@@ -1254,36 +1259,48 @@ class MemoryAdapter(AdapterInterface):
     def _apply_sorting(
         self, instances: List[Any], sort_specs: List[Dict[str, str]]
     ) -> List[Any]:
-        """Apply sorting to instances based on sort specifications."""
+        """Apply sorting with SQLite-like NULLS (first on ASC, last on DESC).
 
-        def sort_key(instance):
-            key_values = []
-            for spec in sort_specs:
-                field = spec["field"]
-                order = spec.get("order", "asc")
+        Uses stable multi-pass sorts so datetimes/strings/numbers and mixed
+        ``order`` spellings all work without type-specific key hacks.
+        """
+        if not sort_specs:
+            return instances
 
-                if "." in field:
-                    value = self._get_nested_field_value(instance, field)
-                elif hasattr(instance, field):
-                    value = getattr(instance, field)
-                else:
-                    value = None
+        def field_value(instance: Any, field: str) -> Any:
+            if "." in field:
+                value = self._get_nested_field_value(instance, field)
+            elif hasattr(instance, field):
+                value = getattr(instance, field)
+            else:
+                value = None
 
-                if value is None:
-                    value = float("inf") if order == "asc" else float("-inf")
+            if isinstance(value, NotLoaded):
+                return None
+            # Collection hops are undefined for Memory sort; treat as missing
+            if isinstance(value, list):
+                return None
+            return value
 
-                if order == "desc":
-                    if isinstance(value, (int, float)) and not isinstance(value, bool):
-                        value = -value
-                    elif isinstance(value, str):
-                        # Approximate desc for strings via reverse sort marker
-                        value = tuple(-ord(c) for c in value)
+        def sort_key(instance: Any, field: str):
+            value = field_value(instance, field)
+            # (0, ...) sorts before (1, ...) on ASC → NULLS first (SQLite-like)
+            if value is None:
+                return (0, None)
+            return (1, value)
 
-                key_values.append(value)
+        ordered = list(instances)
+        for spec in reversed(sort_specs):
+            field = spec["field"]
+            order = str(spec.get("order", "asc")).lower()
+            reverse = order == "desc"
+            ordered = sorted(
+                ordered,
+                key=lambda inst, f=field: sort_key(inst, f),
+                reverse=reverse,
+            )
 
-            return tuple(key_values)
-
-        return sorted(instances, key=sort_key)
+        return ordered
 
     def _preload_select_path(self, instance: Any, parts: List[str]) -> None:
         """Load relationship hops along a select path (leaf scalar may remain).

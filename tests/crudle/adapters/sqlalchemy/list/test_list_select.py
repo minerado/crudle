@@ -12,8 +12,6 @@ Deep select supports multi-hop paths (e.g. ``items.item_type.name``) via
 deduplicated outer joins in a single query; see the Deep select section.
 """
 
-import pytest
-
 from tests.models import Item, ItemList, ItemType, Tag
 
 
@@ -751,18 +749,3 @@ def test_return_dict_with_sort_limit_skip(db):
     assert rows[0]["name"] == "c"
     assert rows[0]["price"] == 20
     assert "item_list" not in rows[0]
-
-
-@pytest.mark.skip(reason="DISTINCT ON is only supported by PostgreSQL, not SQLite")
-def test_list_with_select_and_distinct_on(db):
-    """Test listing with both select and distinct_on."""
-    Item.insert(db, name="Item 1", color="red", price=10)
-    Item.insert(db, name="Item 2", color="red", price=20)
-    Item.insert(db, name="Item 3", color="blue", price=30)
-
-    distinct_items = Item.list(db, distinct_on=["color"], select=["name", "color"])
-
-    assert len(distinct_items) == 2
-    colors = [item["color"] for item in distinct_items]
-    assert "red" in colors
-    assert "blue" in colors

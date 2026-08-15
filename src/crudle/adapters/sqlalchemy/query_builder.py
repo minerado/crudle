@@ -97,8 +97,14 @@ class SQLAlchemyQueryBuilder:
 
         for f in fields:
             query_field = SQLAlchemyQueryField(f, self.model)
-            query = query_field.join_query(query)
+            query = query_field.join_query(query, join_opts={"isouter": True})
             query_fields.append(query_field.parent_model_field)
+
+        # Postgres: DISTINCT ON (a, b) requires ORDER BY to start with a, b.
+        # Keep any earlier sort clauses after the distinct_on leading keys.
+        existing_order_by = tuple(query._order_by_clauses or ())
+        query = query.order_by(None)
+        query = query.order_by(*query_fields, *existing_order_by)
 
         return query.distinct(*query_fields)
 
@@ -293,7 +299,9 @@ class SQLAlchemyQueryBuilder:
 
         order = params.get("order", "asc").lower()
         query = query.add_columns(field.parent_model_field)
-        query = field.join_query(query)
+        # Outer join so sorting by a relationship field does not filter out
+        # parents with a missing association (matches filter join semantics).
+        query = field.join_query(query, join_opts={"isouter": True})
         query = query.order_by(getattr(field.parent_model_field, order)())
         return query
 

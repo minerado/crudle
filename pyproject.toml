@@ -19,5 +19,5 @@ dev = [
 
 [tool.pytest.ini_options]
 markers = [
-    "postgres: requires Postgres (FTS / tsvector); set CRUDLE_TEST_DATABASE_URL to run",
+    "postgres: requires Postgres (FTS / DISTINCT ON); set CRUDLE_TEST_DATABASE_URL to run",
 ]

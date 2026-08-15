@@ -53,18 +53,16 @@ for Pydantic models. Intended for tests and small local projects — not product
 **Memory-only differences:** no `commit` (ignored if passed), no custom `Queries` /
 `search_fields`, and `q` is case-insensitive substring match (not Postgres FTS).
 
-### Testing `q` / Postgres FTS
+### Testing Postgres-only features (`q` FTS, `distinct_on`)
 
-Default tests use SQLite. SQLAlchemy `q` / `search` FTS tests are marked
-`@pytest.mark.postgres` and **skip** unless you opt in:
+Default tests use SQLite. SQLAlchemy `q` / `search` FTS and `distinct_on`
+tests are marked `@pytest.mark.postgres` and **skip** unless you opt in:
 
 ```bash
-# Everyday (Memory substring suite + tsquery unit tests run; FTS skipped)
-pytest tests/crudle/adapters/memory/test_list_q.py \
-       tests/crudle/adapters/sqlalchemy/list/test_list_q.py \
-       tests/crudle/adapters/sqlalchemy/test_build_tsquery_string.py
+# Everyday (Memory suites + SQLite SQLAlchemy run; Postgres-only skipped)
+pytest
 
-# Opt-in Postgres FTS
+# Opt-in Postgres (FTS + DISTINCT ON)
 docker run --rm -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
 CRUDLE_TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/postgres \
   pytest -m postgres
@@ -73,7 +71,8 @@ CRUDLE_TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/p
 If port 5432 is already in use, map another host port (e.g. `-p 5433:5432`) and put that port in the URL.
 
 The fixture creates extension `unaccent` and text search config `unaccent_simple`
-(required by the SQLAlchemy adapter).
+(required by the SQLAlchemy `q` adapter). `distinct_on` suites live in
+`tests/crudle/adapters/sqlalchemy/list/test_list_distinct_on.py`.
 
 ```python
 from pydantic import BaseModel

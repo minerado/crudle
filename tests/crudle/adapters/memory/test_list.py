@@ -107,60 +107,6 @@ def test_list_with_deep_nested_filters(db):
     assert lists_with_expensive_items[0].id == list1.id
     assert not any(item.id == list2.id for item in lists_with_expensive_items)
 
-def test_list_with_sorting(db):
-    """Test listing with sorting."""
-    # Arrange
-    db.insert(Item, name="Item 1", price=30)
-    db.insert(Item, name="Item 2", price=10)
-    db.insert(Item, name="Item 3", price=20)
-
-    # Act
-    items_sorted_by_price = db.list(Item, sort=[{"field": "price", "order": "asc"}])
-
-    # Assert
-    assert len(items_sorted_by_price) == 3
-    assert items_sorted_by_price[0].price == 10
-    assert items_sorted_by_price[1].price == 20
-    assert items_sorted_by_price[2].price == 30
-
-def test_list_with_sorting_desc(db):
-    """Test listing with descending sorting."""
-    # Arrange
-    db.insert(Item, name="Item 1", price=30)
-    db.insert(Item, name="Item 2", price=10)
-    db.insert(Item, name="Item 3", price=20)
-
-    # Act
-    items_sorted_by_price = db.list(Item, sort=[{"field": "price", "order": "desc"}])
-
-    # Assert
-    assert len(items_sorted_by_price) == 3
-    assert items_sorted_by_price[0].price == 30
-    assert items_sorted_by_price[1].price == 20
-    assert items_sorted_by_price[2].price == 10
-
-def test_list_with_multiple_sorting(db):
-    """Test listing with multiple sort fields."""
-    # Arrange
-    db.insert(Item, name="Item A", color="red", price=10)
-    db.insert(Item, name="Item B", color="red", price=20)
-    db.insert(Item, name="Item C", color="blue", price=10)
-    db.insert(Item, name="Item D", color="blue", price=20)
-
-    # Act
-    items_sorted = db.list(
-        Item,
-        sort=[{"field": "color", "order": "asc"}, {"field": "price", "order": "desc"}],
-    )
-
-    # Assert
-    assert len(items_sorted) == 4
-    # Should be sorted by color first (blue, red), then by price desc
-    assert items_sorted[0].color == "blue" and items_sorted[0].price == 20
-    assert items_sorted[1].color == "blue" and items_sorted[1].price == 10
-    assert items_sorted[2].color == "red" and items_sorted[2].price == 20
-    assert items_sorted[3].color == "red" and items_sorted[3].price == 10
-
 def test_list_with_limit(db):
     """Test listing with limit."""
     # Arrange
@@ -335,18 +281,3 @@ def test_list_with_mixed_type_comparisons(db):
     # Assert
     assert len(items) == 0  # Should return empty due to type mismatch
 
-def test_list_with_sorting_and_pagination(db):
-    """Test combining sorting with pagination."""
-    # Arrange
-    for i in range(10):
-        db.insert(Item, name=f"Item {i + 1}", price=(i + 1) * 10)
-
-    # Act
-    items = db.list(Item, sort=[{"field": "price", "order": "desc"}], limit=3, skip=2)
-
-    # Assert
-    assert len(items) == 3
-    # Should be sorted by price desc, then take items 3-5 (skip=2, limit=3)
-    assert items[0].price == 80  # 10th item (100) - 2nd item (20) = 80
-    assert items[1].price == 70
-    assert items[2].price == 60

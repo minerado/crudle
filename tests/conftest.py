@@ -15,7 +15,7 @@ temp_db.close()
 # Use SQLite for testing (default)
 TEST_URL = f"sqlite:///{temp_db.name}"
 
-# Opt-in Postgres for FTS / q operator stress tests
+# Opt-in Postgres for FTS / q operator and DISTINCT ON stress tests
 POSTGRES_URL = os.environ.get("CRUDLE_TEST_DATABASE_URL")
 
 # Create the base class for models
@@ -30,7 +30,7 @@ def get_db():
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "postgres: requires Postgres (FTS / tsvector); set CRUDLE_TEST_DATABASE_URL to run",
+        "postgres: requires Postgres (FTS / DISTINCT ON); set CRUDLE_TEST_DATABASE_URL to run",
     )
 
 
@@ -39,7 +39,7 @@ def pytest_collection_modifyitems(config, items):
     if POSTGRES_URL:
         return
     skip_postgres = pytest.mark.skip(
-        reason="CRUDLE_TEST_DATABASE_URL not set; Postgres FTS tests skipped"
+        reason="CRUDLE_TEST_DATABASE_URL not set; Postgres-only tests skipped"
     )
     for item in items:
         if "postgres" in item.keywords:
