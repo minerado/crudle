@@ -231,7 +231,7 @@ users = User.list(db, return_dict=True)
 
 # Count records
 count = User.count(db, age__gt=18)
-count_by_field = User.count(db, field="department")
+with_department = User.count(db, department__ne=None)
 ```
 
 #### Sorting & Pagination
@@ -511,15 +511,16 @@ Deletes records matching the filters.
 
 **Returns:** Deleted model instance or None
 
-#### `count(db, field=None, **kwargs)`
+#### `count(db, **kwargs)`
 
-Counts records matching the filters.
+Counts records matching the filters. Shares the list filter / assoc /
+``distinct_on`` dialect. Use ``field__ne=None`` for non-null scalars.
+``limit`` / ``skip`` / ``sort`` / ``select`` / ``return_dict`` are ignored.
 
 **Parameters:**
 
 - `db`: SQLAlchemy session
-- `field`: Field to count (default: all records)
-- `**kwargs`: Filter criteria
+- `**kwargs`: Filter criteria (and optional ``distinct_on``)
 
 **Returns:** Integer count
 

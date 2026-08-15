@@ -1,7 +1,7 @@
 # query_builder.py
 
 from functools import reduce
-from sqlalchemy import Select, distinct, or_, select
+from sqlalchemy import Select, case, distinct, or_, select
 from sqlalchemy.sql import func
 from typing import Any
 
@@ -196,10 +196,16 @@ class SQLAlchemyQueryBuilder:
                         )
                         for index in range(len(query_field.parents)):
                             joined_paths.add(tuple(query_field.parents[: index + 1]))
+                        # Non-null related scalar → count distinct parent rows
+                        # (Memory parity; avoids distinct-value collapse).
+                        related_col = query_field.parent_model_field
+                        parent_id = getattr(self.model, "id")
                         query_fields.append(
-                            func.count(distinct(query_field.parent_model_field)).label(
-                                f
-                            )
+                            func.count(
+                                distinct(
+                                    case((related_col.isnot(None), parent_id))
+                                )
+                            ).label(f)
                         )
                         selected_labels.add(f)
                     except Exception:
@@ -210,9 +216,18 @@ class SQLAlchemyQueryBuilder:
                 else:
                     query_field = SQLAlchemyQueryField(field, self.model)
                     query = query_field.join_query(query)
-                    query_fields.append(
-                        func.count(distinct(query_field.parent_model_field)).label(f)
-                    )
+                    # Root scalar: COUNT(col) = non-null rows (not distinct values).
+                    # Bare count / id: distinct parent ids (join-safe).
+                    if field == "id":
+                        query_fields.append(
+                            func.count(
+                                distinct(query_field.parent_model_field)
+                            ).label(f)
+                        )
+                    else:
+                        query_fields.append(
+                            func.count(query_field.parent_model_field).label(f)
+                        )
                     selected_labels.add(f)
                 continue
 

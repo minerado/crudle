@@ -1,3 +1,4 @@
+from sqlalchemy import func, select
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 from sqlalchemy.orm.session import Session
 from typing import List
@@ -204,49 +205,47 @@ class SQLAlchemyAdapter:
         return cls.__delete(db, item) if item else None
 
     @classmethod
-    def count(cls, db: Session, field: str | None = None, **kwargs) -> int:
-        """Count instances based on specified filters."""
-        # Extract only filter-related parameters, ignore pagination and other parameters
-        filter_params = {}
+    def count(cls, db: Session, **kwargs) -> int:
+        """Count instances based on specified filters.
+
+        Shares the list filter / assoc / ``distinct_on`` dialect; returns an
+        int. Non-null checks use filters (e.g. ``price__ne=None``).
+
+        ``limit`` / ``skip`` / ``sort`` / ``select`` / ``return_dict`` are
+        ignored. ``distinct_on`` matches list cardinality (one per group)
+        via ``COUNT(*)`` over a distinct subquery (no row materialization).
+        """
         ignored_params = {
             "limit",
             "skip",
             "sort",
             "select",
             "return_dict",
-            "distinct_on",
         }
 
-        for key, value in kwargs.items():
-            if key not in ignored_params:
-                filter_params[key] = value
+        distinct_on = kwargs.get("distinct_on", [])
+        filter_params = {
+            key: value
+            for key, value in kwargs.items()
+            if key not in ignored_params and key != "distinct_on"
+        }
 
-        # Handle field parameter - if field is invalid, just count all records
-        select_field = "count"
-        if field:
-            try:
-                # Check if field exists on the model
-                if hasattr(cls, field):
-                    select_field = f"count.{field}"
-                elif "." in field:
-                    # Handle nested fields like "item_type.name"
-                    parts = field.split(".", 1)
-                    rel_name = parts[0]
-                    nested_field = parts[1]
-                    if hasattr(cls, rel_name):
-                        attr = getattr(cls, rel_name)
-                        if hasattr(attr, "property") and hasattr(
-                            attr.property, "mapper"
-                        ):
-                            related_model = attr.property.mapper.class_
-                            if hasattr(related_model, nested_field):
-                                select_field = f"count.{field}"
-                # If field doesn't exist, just use "count" (count all records)
-            except Exception:
-                # If there's any error with the field, just count all records
-                pass
+        use_list_shaped_distinct = distinct_on is True or (
+            isinstance(distinct_on, list) and len(distinct_on) > 0
+        )
 
-        q = cls.build_query(select=[select_field], **filter_params)
+        if use_list_shaped_distinct:
+            # Same distinct row set as list(limit=None), counted in SQL.
+            inner = cls.build_query(
+                distinct_on=distinct_on,
+                limit=None,
+                skip=0,
+                **filter_params,
+            )
+            count_q = select(func.count()).select_from(inner.subquery())
+            return db.scalar(count_q) or 0
+
+        q = cls.build_query(select=["count"], distinct_on=[], **filter_params)
         return db.scalar(q) or 0
 
     @classmethod

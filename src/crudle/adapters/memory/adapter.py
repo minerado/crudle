@@ -1769,17 +1769,12 @@ class MemoryAdapter(AdapterInterface):
             self._create_immutable_copy(deleted_instance) if deleted_instance else None
         )
 
-    def count(self, model: Type, field: str | None = None, **filters) -> int:
+    def count(self, model: Type, **filters) -> int:
         """Count records matching filters.
 
-        Args:
-            model: The model class
-            field: Optional field to count non-null values for (dotted paths OK).
-                Invalid fields fall back to counting all matches.
-            **filters: Filter criteria (pagination/sort/select params are ignored)
-
-        Returns:
-            Number of records matching the filters
+        Shares the list filter / assoc / ``distinct_on`` dialect. Non-null
+        checks use filters (e.g. ``price__ne=None``). ``limit`` / ``skip`` /
+        ``sort`` / ``select`` / ``return_dict`` are ignored.
         """
         ignored_params = {
             "limit",
@@ -1787,65 +1782,37 @@ class MemoryAdapter(AdapterInterface):
             "sort",
             "select",
             "return_dict",
-            "distinct_on",
         }
+
+        distinct_on = filters.get("distinct_on", [])
         filter_params = {
-            key: value for key, value in filters.items() if key not in ignored_params
+            key: value
+            for key, value in filters.items()
+            if key not in ignored_params and key != "distinct_on"
         }
 
         instances = self._query_instances(model, filter_params)
 
-        if field:
-            if self._is_valid_count_field(model, field):
-                counted = 0
-                for inst in instances:
-                    # Ensure relationships available for dotted fields
-                    candidate = (
-                        self._preload_all_relationships(inst)
-                        if "." in field
-                        else inst
-                    )
-                    value = (
-                        self._get_nested_field_value(candidate, field)
-                        if "." in field
-                        else getattr(candidate, field, None)
-                    )
-                    if value is not None and not isinstance(value, NotLoaded):
-                        counted += 1
-                result_count = counted
-            else:
-                result_count = len(instances)
-        else:
-            result_count = len(instances)
+        use_distinct = distinct_on is True or (
+            isinstance(distinct_on, list) and len(distinct_on) > 0
+        )
+        if use_distinct:
+            instances = self._apply_distinct(instances, distinct_on)
+
+        result_count = len(instances)
 
         self._query_history.append(
             {
                 "operation": "count",
                 "model": model.__name__,
-                "field": field,
                 "filters": filter_params,
+                "special_params": {"distinct_on": distinct_on} if use_distinct else {},
                 "result_count": result_count,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
 
         return result_count
-
-    def _is_valid_count_field(self, model: Type, field: str) -> bool:
-        """Return True if field exists on model or as a dotted relationship path."""
-        if "." in field:
-            parts = field.split(".", 1)
-            rel_name, nested = parts[0], parts[1]
-            relationships = self._infer_relationships(model)
-            if rel_name not in relationships:
-                return False
-            related = relationships[rel_name]["related_model"]
-            if "." in nested:
-                return self._is_valid_count_field(related, nested)
-            return nested in getattr(related, "model_fields", {})
-        if issubclass(model, BaseModel):
-            return field in model.model_fields
-        return hasattr(model, field)
 
     def get_query_history(self) -> List[Dict[str, Any]]:
         """Get the query history for debugging.
