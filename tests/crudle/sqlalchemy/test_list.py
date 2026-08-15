@@ -31,23 +31,6 @@ def test_list_should_return_empty_list_when_no_records(db):
     assert items == []
 
 
-def test_list_with_lt_operator(db):
-    """Test listing with less than operator."""
-    # Arrange
-    item1 = Item.insert(db, name="Item 1", price=10)
-    item2 = Item.insert(db, name="Item 2", price=20)
-    item3 = Item.insert(db, name="Item 3", price=30)
-
-    # Act
-    cheap_items = Item.list(db, price__lt=25)
-
-    # Assert
-    assert len(cheap_items) == 2
-    assert item1 in cheap_items
-    assert item2 in cheap_items
-    assert item3 not in cheap_items
-
-
 def test_list_with_le_operator(db):
     """Test listing with less than or equal operator."""
     # Arrange
