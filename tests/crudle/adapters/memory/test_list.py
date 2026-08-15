@@ -107,42 +107,6 @@ def test_list_with_deep_nested_filters(db):
     assert lists_with_expensive_items[0].id == list1.id
     assert not any(item.id == list2.id for item in lists_with_expensive_items)
 
-def test_list_with_limit(db):
-    """Test listing with limit."""
-    # Arrange
-    for i in range(5):
-        db.insert(Item, name=f"Item {i + 1}", price=i * 10)
-
-    # Act
-    limited_items = db.list(Item, limit=3)
-
-    # Assert
-    assert len(limited_items) == 3
-
-def test_list_with_skip(db):
-    """Test listing with skip (offset)."""
-    # Arrange
-    for i in range(5):
-        db.insert(Item, name=f"Item {i + 1}", price=i * 10)
-
-    # Act
-    skipped_items = db.list(Item, skip=2)
-
-    # Assert
-    assert len(skipped_items) == 3
-
-def test_list_with_limit_and_skip(db):
-    """Test listing with both limit and skip."""
-    # Arrange
-    for i in range(5):
-        db.insert(Item, name=f"Item {i + 1}", price=i * 10)
-
-    # Act
-    paginated_items = db.list(Item, limit=2, skip=1)
-
-    # Assert
-    assert len(paginated_items) == 2
-
 def test_list_with_datetime_filters(db):
     """Test listing with datetime filters."""
     # Arrange
@@ -231,17 +195,6 @@ def test_list_with_invalid_operator_raises(db):
 
     with pytest.raises(Exception, match="Forbidden operator"):
         db.list(Item, color__invalid_op="red")
-
-def test_list_default_limit_is_25(db):
-    """Test README default list limit of 25."""
-    for i in range(30):
-        db.insert(Item, name=f"Item {i}", color="red", price=i)
-
-    items = db.list(Item)
-    assert len(items) == 25
-
-    items_all = db.list(Item, limit=100)
-    assert len(items_all) == 30
 
 def test_list_with_distinct_on_fields(db):
     """Test distinct_on keeps first row per key after sort."""

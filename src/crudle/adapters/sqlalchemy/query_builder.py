@@ -29,7 +29,7 @@ class SQLAlchemyQueryBuilder:
     def build_query(
         self,
         distinct_on: list[str] | bool = True,
-        limit: int = DEFAULT_QUERY_LIMIT,
+        limit: int | None = DEFAULT_QUERY_LIMIT,
         skip: int = 0,
         sort: list[dict] | None = None,
         select: list = [],
@@ -128,9 +128,17 @@ class SQLAlchemyQueryBuilder:
         return query.where(field.operation(value))
 
     def __apply_limit(self, query: Select, limit: int) -> Select:
+        if limit is None:
+            return query
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
         return query.limit(limit)
 
     def __apply_offset(self, query: Select, skip: int) -> Select:
+        if skip is None:
+            skip = 0
+        if skip < 0:
+            raise ValueError("skip must be >= 0")
         return query.offset(skip)
 
     def __apply_select(self, query: Select, fields: list) -> Select:

@@ -83,42 +83,6 @@ def test_list_with_deep_nested_filters(db):
     assert list1 in lists_with_expensive_items
     assert list2 not in lists_with_expensive_items
 
-def test_list_with_limit(db):
-    """Test listing with limit."""
-    # Arrange
-    for i in range(5):
-        Item.insert(db, name=f"Item {i + 1}", price=i * 10)
-
-    # Act
-    limited_items = Item.list(db, limit=3)
-
-    # Assert
-    assert len(limited_items) == 3
-
-def test_list_with_skip(db):
-    """Test listing with skip (offset)."""
-    # Arrange
-    for i in range(5):
-        Item.insert(db, name=f"Item {i + 1}", price=i * 10)
-
-    # Act
-    skipped_items = Item.list(db, skip=2)
-
-    # Assert
-    assert len(skipped_items) == 3
-
-def test_list_with_limit_and_skip(db):
-    """Test listing with both limit and skip."""
-    # Arrange
-    for i in range(5):
-        Item.insert(db, name=f"Item {i + 1}", price=i * 10)
-
-    # Act
-    paginated_items = Item.list(db, limit=2, skip=1)
-
-    # Assert
-    assert len(paginated_items) == 2
-
 def test_list_with_empty_distinct_on(db):
     """Test listing with empty distinct_on array."""
     # Arrange

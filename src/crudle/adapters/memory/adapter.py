@@ -1182,6 +1182,20 @@ class MemoryAdapter(AdapterInterface):
 
         skip = special_params.get("skip", 0)
         limit = special_params.get("limit", DEFAULT_QUERY_LIMIT)
+
+        if skip is None:
+            skip = 0
+        if not isinstance(skip, int):
+            raise ValueError("skip must be an int")
+        if skip < 0:
+            raise ValueError("skip must be >= 0")
+
+        if limit is not None:
+            if not isinstance(limit, int):
+                raise ValueError("limit must be an int or None")
+            if limit < 0:
+                raise ValueError("limit must be >= 0")
+
         if skip:
             instances = instances[skip:]
         if limit is not None:
