@@ -222,7 +222,11 @@ class SQLAlchemyAdapter:
 
     @classmethod
     def delete_by(cls, db: Session, **kwargs):
-        """Delete an instance based on specified filters."""
+        """Delete exactly one instance matching filters, or None.
+
+        Uses ``get_by`` (same filter dialect / MultipleResultsFound /
+        ignored list options), then deletes that row.
+        """
         item = cls.get_by(db, **kwargs)
 
         return cls.__delete(db, item) if item else None
@@ -278,6 +282,21 @@ class SQLAlchemyAdapter:
 
     @staticmethod
     def __delete(db: Session, model, commit=True):
+        if model is None:
+            return None
+
+        # Dual ``secondary=`` + association-object mappings (e.g. ``tags``
+        # and ``item_tags``) conflict on flush if both are cleared. Clear only
+        # the ``secondary=`` collections, then flush (sessions often use
+        # ``autoflush=False``).
+        cleared = False
+        for rel in model.__mapper__.relationships:
+            if rel.uselist and rel.secondary is not None:
+                setattr(model, rel.key, [])
+                cleared = True
+        if cleared:
+            db.flush()
+
         db.delete(model)
 
         if commit:

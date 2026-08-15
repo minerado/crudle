@@ -1753,17 +1753,10 @@ class MemoryAdapter(AdapterInterface):
         return self._create_immutable_copy(instance) if instance else None
 
     def delete_by(self, model: Type, **filters) -> Optional[Any]:
-        """Delete a record by specified filters.
+        """Delete exactly one record matching filters, or None.
 
-        Args:
-            model: The model class
-            **filters: Filter criteria to find the record
-
-        Returns:
-            The deleted model instance or None if not found
-
-        Raises:
-            MultipleResultsFound: If more than one record matches
+        Uses ``get_by`` (same filter dialect / MultipleResultsFound /
+        ignored list options), then removes that row from the store.
         """
         instance = self.get_by(model, **filters)
         if instance is None:

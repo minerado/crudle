@@ -505,7 +505,9 @@ Updates records matching the filters.
 
 #### `delete_by(db, **kwargs)`
 
-Deletes records matching the filters.
+Deletes exactly one record matching filters, or None. Uses ``get_by``
+(same filter dialect / MultipleResultsFound / ignored list options), then
+deletes that row.
 
 **Parameters:**
 
