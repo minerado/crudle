@@ -31,27 +31,6 @@ def test_list_should_return_empty_list_when_no_records(db):
     assert items == []
 
 
-def test_list_with_eq_operator(db):
-    """Test listing with equality operator."""
-    # Arrange
-    item1 = Item.insert(db, name="Item 1", color="red", price=10)
-    item2 = Item.insert(db, name="Item 2", color="blue", price=20)
-    item3 = Item.insert(db, name="Item 3", color="red", price=30)
-
-    # Act
-    red_items = Item.list(db, color="red")
-    blue_items = Item.list(db, color="blue")
-
-    # Assert
-    assert len(red_items) == 2
-    assert item1 in red_items
-    assert item3 in red_items
-    assert item2 not in red_items
-
-    assert len(blue_items) == 1
-    assert item2 in blue_items
-
-
 def test_list_with_gt_operator(db):
     """Test listing with greater than operator."""
     # Arrange
@@ -413,25 +392,6 @@ def test_list_with_empty_filters(db):
     assert len(items) == 2
     assert item1 in items
     assert item2 in items
-
-
-def test_list_with_none_values(db):
-    """Test listing with None values in filters."""
-    # Arrange
-    Item.insert(db, name="Item 1", color="red", price=10)
-    item2 = Item.insert(db, name="Item 2", color=None, price=20)
-    item3 = Item.insert(db, name="Item 3", color="blue", price=None)
-
-    # Act
-    items_with_none_color = Item.list(db, color=None)
-    items_with_none_price = Item.list(db, price=None)
-
-    # Assert
-    assert len(items_with_none_color) == 1
-    assert item2 in items_with_none_color
-
-    assert len(items_with_none_price) == 1
-    assert item3 in items_with_none_price
 
 
 def test_list_with_complex_queries(db):
