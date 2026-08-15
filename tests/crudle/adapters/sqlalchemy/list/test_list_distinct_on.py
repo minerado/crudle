@@ -1,23 +1,43 @@
 """List ``distinct_on`` — SQLAlchemy / Postgres ``DISTINCT ON``.
 
-Requires Postgres. Opt in with:
+Most cases require Postgres. Opt in with:
 
     CRUDLE_TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/postgres \\
       pytest -m postgres
 
-Without the env var, these tests are skipped.
+Without the env var, postgres-marked tests are skipped.
 
-SQLite does not support ``DISTINCT ON``; default list tests use SQLite.
-Memory implements ``distinct_on`` in-process (see memory list/sort suites).
+SQLite does not support ``DISTINCT ON``. The empty ``distinct_on=[]`` noop
+runs on the default SQLite fixture. Memory owns a full in-process twin in
+``tests/crudle/adapters/memory/test_list_distinct_on.py``.
 """
 
 import pytest
 
 from tests.models import Item
 
-pytestmark = pytest.mark.postgres
+
+# ---------------------------------------------------------------------------
+# SQLite-safe edges
+# ---------------------------------------------------------------------------
 
 
+def test_empty_distinct_on_is_noop(db):
+    """Empty distinct_on list leaves the query unchanged (works on SQLite)."""
+    Item.insert(db, name="Item 1", color="red")
+    Item.insert(db, name="Item 2", color="blue")
+
+    items = Item.list(db, distinct_on=[])
+
+    assert len(items) == 2
+
+
+# ---------------------------------------------------------------------------
+# Postgres DISTINCT ON
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.postgres
 def test_list_with_distinct_on(postgres_db):
     """One row per distinct_on key."""
     Item.insert(postgres_db, name="Item 1", color="red", price=10)
@@ -33,6 +53,7 @@ def test_list_with_distinct_on(postgres_db):
     assert len(set(colors)) == 2
 
 
+@pytest.mark.postgres
 def test_list_with_distinct_on_multiple_fields(postgres_db):
     """Unique combinations across multiple distinct_on fields."""
     Item.insert(postgres_db, name="Item 1", color="red", price=10)
@@ -47,6 +68,7 @@ def test_list_with_distinct_on_multiple_fields(postgres_db):
     assert combinations == {("red", 10), ("red", 20), ("blue", 10)}
 
 
+@pytest.mark.postgres
 def test_list_with_distinct_on_and_filters(postgres_db):
     """Filters apply before / with distinct_on."""
     Item.insert(postgres_db, name="Item 1", color="red", price=10)
@@ -60,6 +82,7 @@ def test_list_with_distinct_on_and_filters(postgres_db):
     assert distinct_red_items[0].color == "red"
 
 
+@pytest.mark.postgres
 def test_list_with_distinct_on_and_sorting(postgres_db):
     """Sort chooses which row wins within each distinct_on group."""
     Item.insert(postgres_db, name="Item 1", color="red", price=10)
@@ -78,6 +101,7 @@ def test_list_with_distinct_on_and_sorting(postgres_db):
     assert by_color["blue"].price == 30
 
 
+@pytest.mark.postgres
 def test_list_with_distinct_on_single_record(postgres_db):
     Item.insert(postgres_db, name="Item 1", color="red")
 
@@ -87,6 +111,7 @@ def test_list_with_distinct_on_single_record(postgres_db):
     assert items[0].color == "red"
 
 
+@pytest.mark.postgres
 def test_list_with_select_and_distinct_on(postgres_db):
     """distinct_on works with select projection."""
     Item.insert(postgres_db, name="Item 1", color="red", price=10)
@@ -103,6 +128,7 @@ def test_list_with_select_and_distinct_on(postgres_db):
     assert "blue" in colors
 
 
+@pytest.mark.postgres
 def test_list_with_sort_and_distinct_on(postgres_db):
     """Same contract as sort suite: highest price per color."""
     Item.insert(postgres_db, name="Item 1", color="red", price=10)

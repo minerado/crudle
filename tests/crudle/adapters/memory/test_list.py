@@ -196,22 +196,6 @@ def test_list_with_invalid_operator_raises(db):
     with pytest.raises(Exception, match="Forbidden operator"):
         db.list(Item, color__invalid_op="red")
 
-def test_list_with_distinct_on_fields(db):
-    """Test distinct_on keeps first row per key after sort."""
-    db.insert(Item, name="A", color="red", price=10)
-    db.insert(Item, name="B", color="red", price=20)
-    db.insert(Item, name="C", color="blue", price=30)
-
-    items = db.list(
-        Item,
-        sort=[{"field": "price", "order": "asc"}],
-        distinct_on=["color"],
-        limit=100,
-    )
-    assert len(items) == 2
-    colors = {item.color for item in items}
-    assert colors == {"red", "blue"}
-
 def test_list_with_nested_dict_filters(db):
     """Test nested dict filters are flattened like SQLAlchemy."""
     item_type = db.insert(ItemType, name="Electronics")

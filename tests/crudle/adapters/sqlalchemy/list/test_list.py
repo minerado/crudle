@@ -83,19 +83,6 @@ def test_list_with_deep_nested_filters(db):
     assert list1 in lists_with_expensive_items
     assert list2 not in lists_with_expensive_items
 
-def test_list_with_empty_distinct_on(db):
-    """Test listing with empty distinct_on array."""
-    # Arrange
-    Item.insert(db, name="Item 1", color="red")
-    Item.insert(db, name="Item 2", color="blue")
-
-    # Act
-    items = Item.list(db, distinct_on=[])
-
-    # Assert
-    assert len(items) == 2
-    # Should return all items (no distinct filtering)
-
 def test_list_with_custom_filters(db):
     """Test listing with custom filters defined in Queries class."""
     # Arrange

@@ -71,8 +71,10 @@ CRUDLE_TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/p
 If port 5432 is already in use, map another host port (e.g. `-p 5433:5432`) and put that port in the URL.
 
 The fixture creates extension `unaccent` and text search config `unaccent_simple`
-(required by the SQLAlchemy `q` adapter). `distinct_on` suites live in
-`tests/crudle/adapters/sqlalchemy/list/test_list_distinct_on.py`.
+(required by the SQLAlchemy `q` adapter). Postgres `distinct_on` lives in
+`tests/crudle/adapters/sqlalchemy/list/test_list_distinct_on.py` (empty `[]` also
+runs on SQLite). Memory’s in-process twin is
+`tests/crudle/adapters/memory/test_list_distinct_on.py`.
 
 ```python
 from pydantic import BaseModel
