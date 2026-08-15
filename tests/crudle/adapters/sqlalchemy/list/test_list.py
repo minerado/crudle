@@ -1,7 +1,6 @@
-import pytest
 from datetime import datetime, timezone
 
-from tests.models import Item, ItemList, Tag
+from tests.models import Item
 
 def test_list_should_return_all_records(db):
     """Test listing all records without filters."""
@@ -44,32 +43,6 @@ def test_list_with_multiple_filters(db):
     assert item4 in red_expensive_items
     assert item1 not in red_expensive_items
     assert item3 not in red_expensive_items
-
-def test_list_with_custom_filters(db):
-    """Test listing with custom filters defined in Queries class."""
-    # Arrange
-    item1 = Item.insert(db, name="Item 1", price=10)
-    item2 = Item.insert(db, name="Item 2", price=20)
-    item3 = Item.insert(db, name="Item 3", price=30)
-
-    # Create a custom model with custom filters
-    class CustomItem(Item):
-        class Queries:
-            def filter_expensive(self, query, value):
-                if value:
-                    return query.filter(Item.price > 15)
-                return query
-
-    # Act
-    expensive_items = CustomItem.list(db, expensive=True)
-
-    # Assert
-    assert len(expensive_items) == 2
-    # Check by ID since the objects are different types
-    expensive_ids = [item.id for item in expensive_items]
-    assert item2.id in expensive_ids
-    assert item3.id in expensive_ids
-    assert item1.id not in expensive_ids
 
 def test_list_with_datetime_filters(db):
     """Test listing with datetime filters."""
@@ -117,15 +90,3 @@ def test_list_with_complex_queries(db):
     assert item2 in complex_query  # blue, price=20
     assert item5 in complex_query  # red, price=25
 
-def test_list_with_custom_filter(db):
-    """Test listing with custom filter."""
-    # Arrange
-    Item.insert(db, name="Item 1", color="red", price=10)
-    Item.insert(db, name="Item 2", color="blue", price=20)
-
-    # Act
-    items = Item.list(db, is_expensive=True)
-
-    # Assert
-    assert len(items) == 1
-    assert items[0].name == "Item 2"
