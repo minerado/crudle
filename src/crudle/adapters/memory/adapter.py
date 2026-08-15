@@ -892,13 +892,24 @@ class MemoryAdapter(AdapterInterface):
                 if instance_value is None:
                     return False
                 return instance_value != filter_value
-            elif operator == "gt":
-                return instance_value > filter_value
-            elif operator == "ge":
-                return instance_value >= filter_value
-            elif operator == "lt":
-                return instance_value < filter_value
-            elif operator == "le":
+            elif operator in ("gt", "ge", "lt", "le"):
+                # SQLAlchemy/SQL parity:
+                # - NULL column vs value → row excluded (unknown)
+                # - comparison with None filter value is rejected
+                if filter_value is None:
+                    raise Exception(
+                        "Only '=', '!=', 'is_()', 'is_not()', "
+                        "'is_distinct_from()', 'is_not_distinct_from()' "
+                        "operators can be used with None/True/False"
+                    )
+                if instance_value is None:
+                    return False
+                if operator == "gt":
+                    return instance_value > filter_value
+                if operator == "ge":
+                    return instance_value >= filter_value
+                if operator == "lt":
+                    return instance_value < filter_value
                 return instance_value <= filter_value
             elif operator == "in":
                 return instance_value in filter_value
