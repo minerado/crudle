@@ -303,7 +303,7 @@ class SQLAlchemyAdapter:
         dotted association hops, nested / list values, and list-option
         keys are not merged.
         """
-        control = {"on_update_assocs", "should_raise"}
+        control = {"on_update_assocs", "should_raise", "commit"}
         attrs = {k: v for k, v in kwargs.items() if k not in control}
         skip = {
             "filter",
@@ -353,7 +353,10 @@ class SQLAlchemyAdapter:
         if updated is not None:
             return updated
 
-        return cls.insert(db, **cls._attrs_for_upsert_insert(filters, kwargs))
+        commit = kwargs.get("commit", True)
+        return cls.insert(
+            db, commit=commit, **cls._attrs_for_upsert_insert(filters, kwargs)
+        )
 
     @staticmethod
     def __delete(db: Session, model, commit=True):
@@ -394,78 +397,34 @@ class SQLAlchemyAdapter:
             db (Session): The database session.
             model: The database model instance to update the row.
             commit (bool): Whether to commit the changes to the database.
+                ``False`` participates in the session without ``commit``
+                (same idea as insert ``commit=False``).
             kwargs: Params used to update the row.
 
         Returns:
             BaseModel: The updated row.
         """
-        if not commit:
-            # For commit=False, work on a copy to avoid modifying the original
-            # and then rollback all database changes
-            savepoint = db.begin_nested()
+        relationship_map = model.__mapper__.relationships
 
-            # Create a copy of the model to work with
-            model_copy = type(model)()
-            for key in model.__mapper__.columns.keys():
-                if hasattr(model, key):
-                    setattr(model_copy, key, getattr(model, key))
-
-            # Ensure the copy has the same id for foreign key relationships
-            if hasattr(model, "id") and model.id:
-                model_copy.id = model.id
-
-            # Copy relationships - start with empty collections for list relationships
-            for key in model.__mapper__.relationships.keys():
-                if hasattr(model, key):
-                    rel_value = getattr(model, key)
-                    if rel_value is not None:
-                        if hasattr(rel_value, "__iter__") and not isinstance(
-                            rel_value, str
-                        ):
-                            # It's a collection - start with empty list
-                            setattr(model_copy, key, [])
-                        else:
-                            # It's a single relationship - copy the reference
-                            setattr(model_copy, key, rel_value)
-                    else:
-                        # Set to None if the original was None
-                        setattr(model_copy, key, None)
-
-            # Work with the copy
-            working_model = model_copy
-        else:
-            working_model = model
-            savepoint = None
-
-        try:
-            # Don't filter None values since we want to validate them
-            params = kwargs
-            relationship_map = working_model.__mapper__.relationships
-
-            # Apply all changes to the working model
-            for key, value in params.items():
-                if key in relationship_map:
-                    updated_relationship = handle_relationship(
-                        db,
-                        working_model,
-                        key,
-                        value,
-                        on_update=on_update_assocs,
-                        commit=commit,
-                    )
-                    setattr(working_model, key, updated_relationship)
-                else:
-                    setattr(working_model, key, value)
-
-            if commit:
-                db.commit()
+        for key, value in kwargs.items():
+            if key in relationship_map:
+                updated_relationship = handle_relationship(
+                    db,
+                    model,
+                    key,
+                    value,
+                    on_update=on_update_assocs,
+                    commit=commit,
+                )
+                setattr(model, key, updated_relationship)
             else:
-                # Rollback to savepoint, undoing all database changes
-                savepoint.rollback()
-        except SQLAlchemyError as e:
-            if not commit and savepoint:
-                savepoint.rollback()
-            db.rollback()
-            raise e
+                setattr(model, key, value)
 
-        return working_model
+        if commit:
+            try:
+                db.commit()
+            except SQLAlchemyError:
+                db.rollback()
+                raise
+
+        return model

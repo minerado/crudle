@@ -1777,7 +1777,7 @@ class MemoryAdapter(AdapterInterface):
         dotted association hops, nested / list values, and list-option
         keys are not merged.
         """
-        control = {"on_update_assocs", "should_raise"}
+        control = {"on_update_assocs", "should_raise", "commit"}
         attrs = {k: v for k, v in kwargs.items() if k not in control}
         skip = {
             "filter",

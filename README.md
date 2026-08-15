@@ -38,6 +38,31 @@ db = Session()
 
 # Start using Crudle
 user = User.insert(db, name="John Doe", email="john@example.com")
+```
+
+Or with the Repo-style façade (sessions stay inside one-shot / ``transaction``):
+
+```python
+from crudle import Crudle, SQLAlchemy
+from sqlalchemy import Column, Integer, String
+
+crud = Crudle(SQLAlchemy("sqlite:///example.db"))
+
+class User(crud.Model):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50))
+    email = Column(String(100))
+
+crud.create_all()
+user = crud.insert(User, name="John Doe", email="john@example.com")
+users = crud.list(User, name="John Doe")
+```
+
+Mixin style continues to work when you already have a session:
+
+```python
+user = User.insert(db, name="John Doe", email="john@example.com")
 users = User.list(db, name="John Doe")
 user = User.get_by(db, email="john@example.com")
 user.update(db, name="Jane Doe")
@@ -408,13 +433,29 @@ user = User.insert(db, name="Test", commit=False)
 # ... do more operations
 db.commit()  # Commit all at once
 
-# Update with commit=False returns a preview copy and rolls back the
-# session work; the original row is unchanged (not “commit later”).
+# Update with commit=False also stays pending on the session
 user = User.get(db, 1)
-preview = user.update(db, name="New Name", commit=False)
-assert preview.name == "New Name"
-db.refresh(user)
-assert user.name != "New Name"
+user.update(db, name="New Name", commit=False)
+db.commit()
+```
+
+Prefer the Repo-style façade for multi-step work without threading sessions:
+
+```python
+from crudle import Crudle, SQLAlchemy
+
+crud = Crudle(SQLAlchemy("sqlite:///app.db"))
+
+class User(crud.Model):
+    ...
+
+crud.create_all()
+user = crud.insert(User, name="Ada")  # one-shot, auto-commit
+
+user = crud.transaction(lambda db: (
+    db.insert(User, name="Ada"),
+    # db.session for raw SQLAlchemy if needed
+))
 ```
 
 ### Relationship Update Strategies
