@@ -830,10 +830,17 @@ class MemoryAdapter(AdapterInterface):
         # apply to collection associations per SQLAlchemy usage in README.
 
     def _normalize_filter_params(self, filters: Dict[str, Any]) -> Dict[str, Any]:
-        """Flatten nested filter dicts to dotted keys (SQLAlchemy parity)."""
+        """Flatten nested filter dicts to dotted keys (SQLAlchemy parity).
+
+        Also unwraps ``filter={...}`` the same way ``list`` does.
+        """
         if not filters:
             return {}
-        return dict(flatten_dict(filters))
+        merged = {k: v for k, v in filters.items() if k != "filter"}
+        nested = filters.get("filter")
+        if isinstance(nested, dict):
+            merged.update(nested)
+        return dict(flatten_dict(merged))
 
     def _split_field_operation(self, field: str) -> tuple[str, str]:
         """Split field__op; raise on forbidden operators (SQLAlchemy parity)."""
@@ -1138,20 +1145,29 @@ class MemoryAdapter(AdapterInterface):
     def get_by(
         self, model: Type, preload: List[str] = None, **filters
     ) -> Optional[Any]:
-        """Get a record by specified filters.
+        """Get exactly one record matching filters, or None.
 
-        Args:
-            model: The model class
-            preload: List of relationships to preload
-            **filters: Filter criteria
+        Shares the list filter / assoc dialect. Raises
+        ``MultipleResultsFound`` if more than one record matches.
 
-        Returns:
-            The model instance or None if not found
-
-        Raises:
-            MultipleResultsFound: If more than one record matches
+        ``limit`` / ``skip`` / ``sort`` / ``select`` / ``return_dict`` /
+        ``distinct_on`` are ignored (same idea as ``count``).
         """
-        matches = self._query_instances(model, filters)
+        ignored_params = {
+            "limit",
+            "skip",
+            "sort",
+            "select",
+            "return_dict",
+            "distinct_on",
+        }
+        filter_params = {
+            key: value
+            for key, value in filters.items()
+            if key not in ignored_params
+        }
+
+        matches = self._query_instances(model, filter_params)
         if not matches:
             return None
         if len(matches) > 1:
@@ -1170,7 +1186,7 @@ class MemoryAdapter(AdapterInterface):
             {
                 "operation": "get_by",
                 "model": model.__name__,
-                "filters": filters,
+                "filters": filter_params,
                 "preload": preload or [],
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }

@@ -461,7 +461,10 @@ Retrieves a record by its primary key.
 
 #### `get_by(db, **kwargs)`
 
-Retrieves a record by specified filters.
+Retrieves exactly one record matching filters, or None. Shares the list
+filter / assoc dialect. Raises ``MultipleResultsFound`` if more than one
+row matches. ``limit`` / ``skip`` / ``sort`` / ``select`` / ``return_dict`` /
+``distinct_on`` are ignored.
 
 **Parameters:**
 

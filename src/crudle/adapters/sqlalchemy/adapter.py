@@ -122,10 +122,33 @@ class SQLAlchemyAdapter:
 
     @classmethod
     def get_by(cls, db: Session, **kwargs):
-        """Retrieve an instance by specified filters."""
-        q = cls.build_query(**kwargs)
+        """Retrieve exactly one instance matching filters, or None.
 
-        return db.execute(q).scalar_one_or_none()
+        Shares the list filter / assoc dialect. Raises
+        ``MultipleResultsFound`` if more than one row matches.
+
+        ``limit`` / ``skip`` / ``sort`` / ``select`` / ``return_dict`` /
+        ``distinct_on`` are ignored (same idea as ``count``) so pagination
+        cannot hide duplicates or drop the only match.
+        """
+        ignored_params = {
+            "limit",
+            "skip",
+            "sort",
+            "select",
+            "return_dict",
+            "distinct_on",
+        }
+        filter_params = {
+            key: value
+            for key, value in kwargs.items()
+            if key not in ignored_params
+        }
+        q = cls.build_query(
+            limit=None, skip=0, distinct_on=[], **filter_params
+        )
+        # Joins can fan out parent rows; unique() keeps entity identity once.
+        return db.execute(q).scalars().unique().one_or_none()
 
     @classmethod
     def list(cls, db: Session, **kwargs):
