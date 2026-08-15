@@ -326,15 +326,11 @@ class MemoryAdapter(AdapterInterface):
                             related_obj_copy
                         )
                 elif rel_info["type"] == "one_to_one":
-                    # Foreign key is on the current instance - create a copy and update stored version
+                    # Foreign key is on the current instance — mutate it in place so
+                    # callers that keep this object (and a later store overwrite)
+                    # still see the FK.
                     if hasattr(instance, foreign_key_field):
-                        # Create a copy of the instance with updated foreign key
-                        instance_copy = self._create_immutable_copy(instance)
-                        setattr(instance_copy, foreign_key_field, related_obj.id)
-                        # Update the stored instance
-                        self._ensure_model_data(type(instance))[instance.id] = (
-                            instance_copy
-                        )
+                        setattr(instance, foreign_key_field, related_obj.id)
 
     def _get_foreign_key_field_name(
         self, relationship_field: str, parent_model_class: Type
@@ -420,35 +416,56 @@ class MemoryAdapter(AdapterInterface):
     def _update_reverse_relationship_for_object(
         self, instance: Any, field_name: str, related_obj: Any
     ) -> None:
-        """Update the reverse relationship for a single related object."""
-        # Find the reverse relationship field name
+        """Update the reverse relationship for a single related object.
+
+        Always merges against the canonical store row when ``related_obj`` has
+        an id. Payload copies may still carry ``NotLoaded`` / stale lists; those
+        must not wipe existing reverse members.
+        """
         reverse_field_name = self._get_reverse_relationship_field_name(
             field_name, type(instance), type(related_obj)
         )
+        if not reverse_field_name:
+            return
 
-        if reverse_field_name:
-            # Get the current value of the reverse relationship
-            current_value = getattr(related_obj, reverse_field_name, None)
+        related_model = type(related_obj)
+        related_id = getattr(related_obj, "id", None)
+        store = self._ensure_model_data(related_model)
+        base = store.get(related_id) if related_id is not None else None
+        if base is None:
+            base = related_obj
 
+        reverse_info = self._infer_relationships(related_model).get(
+            reverse_field_name, {}
+        )
+        is_list = bool(reverse_info.get("is_list"))
+        current_value = getattr(base, reverse_field_name, None)
+
+        related_obj_copy = self._create_immutable_copy(base)
+
+        if is_list:
+            # Never assign a bare instance into a list field (Pydantic iterates
+            # model fields). Merge with store state instead of replacing.
             if isinstance(current_value, list):
-                # Add the instance to the list if it's not already there
-                if instance not in current_value:
-                    # Create a copy of the related object and update it
-                    related_obj_copy = self._create_immutable_copy(related_obj)
-                    updated_list = current_value + [instance]
-                    setattr(related_obj_copy, reverse_field_name, updated_list)
-                    # Update the stored object
-                    self._ensure_model_data(type(related_obj))[related_obj.id] = (
-                        related_obj_copy
-                    )
+                current_list = list(current_value)
             else:
-                # Set the instance as the reverse relationship
-                related_obj_copy = self._create_immutable_copy(related_obj)
-                setattr(related_obj_copy, reverse_field_name, instance)
-                # Update the stored object
-                self._ensure_model_data(type(related_obj))[related_obj.id] = (
-                    related_obj_copy
-                )
+                current_list = []
+
+            instance_id = getattr(instance, "id", None)
+
+            def _same_member(existing: Any) -> bool:
+                if instance_id is not None and getattr(existing, "id", None) == instance_id:
+                    return True
+                return existing is instance
+
+            if not any(_same_member(existing) for existing in current_list):
+                current_list.append(instance)
+            setattr(related_obj_copy, reverse_field_name, current_list)
+        else:
+            setattr(related_obj_copy, reverse_field_name, instance)
+
+        if related_id is not None:
+            store[related_id] = related_obj_copy
 
     def _get_reverse_relationship_field_name(
         self, field_name: str, parent_model: Type, related_model: Type

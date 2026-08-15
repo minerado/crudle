@@ -209,7 +209,12 @@ class SQLAlchemyAdapter:
         should_raise=False,
         **kwargs,
     ):
-        """Update an instance based on specified filters."""
+        """Update exactly one instance matching ``filters``, or None.
+
+        ``filters`` is a dict spread into ``get_by`` (same dialect /
+        MultipleResultsFound / ignored list options). Update attrs and
+        ``on_update_assocs`` / ``commit`` live in ``**kwargs``.
+        """
         item = cls.get_by(db, **filters)
 
         if not item and should_raise:

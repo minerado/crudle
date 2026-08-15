@@ -2,6 +2,7 @@
 Test insert operations for memory adapter.
 """
 
+from src.crudle.adapters.memory.adapter import NotLoaded
 from tests.crudle.adapters.memory.models import Item, ItemList, Tag
 
 
@@ -177,3 +178,19 @@ def test_insert_should_handle_optional_fields(db):
     item = db.insert(Item, name="Test Item", color="red", price=100)
     assert item.color == "red"
     assert item.price == 100
+
+
+def test_insert_m2m_reverse_keeps_prior_links_with_stale_notloaded_copy(db):
+    """Second Tag insert must not wipe Item.tags when payload still has NotLoaded.
+
+    Regression: reverse sync used to replace the store list with ``[new_tag]``
+    whenever the related payload copy still carried ``NotLoaded``.
+    """
+    item = db.insert(Item, name="gadget", color="red")
+    assert isinstance(item.tags, NotLoaded)
+
+    db.insert(Tag, name="sale", items=[item])
+    db.insert(Tag, name="new", items=[item])  # same stale insert return
+
+    stored = db.get(Item, item.id, preload=["tags"])
+    assert {t.name for t in stored.tags} == {"sale", "new"}
