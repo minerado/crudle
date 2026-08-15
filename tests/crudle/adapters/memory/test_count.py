@@ -1,7 +1,7 @@
 """Count overview — Memory adapter.
 
 Twin of SQLAlchemy ``count/test_count.py``. See also ``test_count_ops``,
-``test_count_assoc``, ``test_count_distinct_on``.
+``test_count_q``, ``test_count_assoc``, ``test_count_distinct_on``.
 """
 
 from tests.crudle.adapters.memory.models import Item, ItemList, Tag

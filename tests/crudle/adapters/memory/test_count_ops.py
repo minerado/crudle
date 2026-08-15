@@ -1,6 +1,7 @@
 """Count filter operators — Memory adapter.
 
-Twin of SQLAlchemy ``count/test_count_ops.py``.
+Twin of SQLAlchemy ``count/test_count_ops.py``. Search (``__q``) lives in
+``test_count_q.py``.
 """
 
 from datetime import datetime, timezone
@@ -81,12 +82,6 @@ class TestCountOps:
         db.insert(Item, name="new", color="blue")
 
         assert db.count(Item, created_at__gt=past) == 1
-
-    def test_q_substring(self, db):
-        db.insert(Item, name="Apple Pie", color="red", price=10)
-        db.insert(Item, name="Banana", color="yellow", price=20)
-
-        assert db.count(Item, name__q="apple") == 1
 
     def test_invalid_operator_raises(self, db):
         db.insert(Item, name="a", color="red")

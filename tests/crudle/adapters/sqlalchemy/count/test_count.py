@@ -3,6 +3,7 @@
 Basics, ignored list options, and light combos. Deeper coverage:
 
 - ``test_count_ops.py`` — filter operators
+- ``test_count_q.py`` — text search (``__q`` / ``search``, Postgres)
 - ``test_count_assoc.py`` — relationship filters
 - ``test_count_distinct_on.py`` — ``distinct_on`` cardinality
 - ``test_count_custom.py`` — ``Queries`` filters

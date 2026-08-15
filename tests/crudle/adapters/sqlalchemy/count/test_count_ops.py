@@ -1,7 +1,8 @@
 """Count filter operators — SQLAlchemy adapter.
 
 One file for the list filter dialect applied to ``count`` (eq, comparisons,
-in/ni, None, datetime, multi-op AND).
+in/ni, None, datetime, multi-op AND). Text (``__q``) lives in
+``test_count_q.py`` (Postgres).
 """
 
 from datetime import datetime
