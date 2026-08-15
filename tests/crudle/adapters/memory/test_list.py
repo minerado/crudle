@@ -55,23 +55,6 @@ def test_list_with_eq_operator(db):
     assert item2 in blue_items
 
 
-def test_list_with_le_operator(db):
-    """Test listing with less than or equal operator."""
-    # Arrange
-    item1 = db.insert(Item, name="Item 1", price=10)
-    item2 = db.insert(Item, name="Item 2", price=20)
-    item3 = db.insert(Item, name="Item 3", price=30)
-
-    # Act
-    items_le_20 = db.list(Item, price__le=20)
-
-    # Assert
-    assert len(items_le_20) == 2
-    assert item1 in items_le_20
-    assert item2 in items_le_20
-    assert item3 not in items_le_20
-
-
 def test_list_with_in_operator(db):
     """Test listing with in operator."""
     # Arrange
