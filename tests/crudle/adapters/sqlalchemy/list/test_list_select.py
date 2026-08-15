@@ -7,6 +7,9 @@ SQLAlchemy contract for collection relationships (1:N / M:N): selecting a
 relationship uses a join, so parent rows multiply (one dict per related row).
 Nested relationship data is a single object (or None), not an aggregated list.
 Memory aggregates nested collections into lists — do not treat those as twins.
+
+Deep select supports multi-hop paths (e.g. ``items.item_type.name``) via
+deduplicated outer joins in a single query; see the Deep select section.
 """
 
 import pytest
@@ -379,6 +382,162 @@ def test_list_with_super_deep_nested_assoc(db):
 
 
 # ---------------------------------------------------------------------------
+# Deep select (multi-hop)
+#
+# SQLAlchemy shape: join-row multiplication; each hop nests as a single object
+# (or None), never an aggregated list. Same idea as one-hop collection select.
+# ---------------------------------------------------------------------------
+
+
+def test_deep_select_two_hop_to_one(db):
+    """Two-hop path through 1:N then 1:1 nests as items.item_type."""
+    item_type = ItemType.insert(db, name="electronics")
+    item = Item.insert(db, name="Laptop", color="silver", item_type=item_type)
+    ItemList.insert(db, name="Wishlist", items=[item])
+
+    rows = ItemList.list(db, select=["name", "items.item_type.name"])
+
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Wishlist"
+    assert rows[0]["items"]["item_type"]["name"] == "electronics"
+    # No flat / partially nested leftovers
+    assert "items_item_type_name" not in rows[0]
+    assert "item_type" not in rows[0]
+
+
+def test_deep_select_two_hop_collection_multiplies_rows(db):
+    """1:N then M:N multiplies parent × item × tag; each row is one leaf."""
+    item1 = Item.insert(db, name="Item 1", color="red", price=10)
+    item2 = Item.insert(db, name="Item 2", color="blue", price=20)
+    Tag.insert(db, name="expensive", items=[item1])
+    Tag.insert(db, name="sale", items=[item1])
+    Tag.insert(db, name="cheap", items=[item2])
+    ItemList.insert(db, name="List 1", items=[item1, item2])
+
+    rows = ItemList.list(db, select=["name", "items.id", "items.tags.name"])
+
+    assert len(rows) == 3  # item1×2 tags + item2×1 tag
+
+    triples = {
+        (row["name"], row["items"]["id"], row["items"]["tags"]["name"]) for row in rows
+    }
+    assert triples == {
+        ("List 1", item1.id, "expensive"),
+        ("List 1", item1.id, "sale"),
+        ("List 1", item2.id, "cheap"),
+    }
+
+
+def test_deep_select_merges_sibling_fields_on_same_path(db):
+    """Shallow and deep fields on the same relationship merge into one tree."""
+    item_type = ItemType.insert(db, name="type_a")
+    item = Item.insert(db, name="Gadget", color="red", price=99, item_type=item_type)
+    ItemList.insert(db, name="Box", items=[item])
+
+    rows = ItemList.list(
+        db,
+        select=["name", "items.name", "items.color", "items.item_type.name"],
+    )
+
+    assert len(rows) == 1
+    nested = rows[0]["items"]
+    assert nested["name"] == "Gadget"
+    assert nested["color"] == "red"
+    assert nested["item_type"]["name"] == "type_a"
+
+
+def test_deep_select_missing_intermediate_is_none(db):
+    """Missing hop yields None at that nesting level (outer join semantics)."""
+    item = Item.insert(db, name="Orphan", color="grey")  # no item_type
+    ItemList.insert(db, name="Lonely", items=[item])
+
+    rows = ItemList.list(db, select=["name", "items.item_type.name"])
+
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Lonely"
+    assert rows[0]["items"]["item_type"] is None
+
+
+def test_deep_select_empty_collection_parent_still_returned(db):
+    """Parent with empty collection still appears; deep path is None."""
+    ItemList.insert(db, name="Empty", items=[])
+
+    rows = ItemList.list(db, select=["name", "items.tags.name"])
+
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Empty"
+    assert rows[0]["items"] is None
+
+
+def test_deep_select_from_many_to_many_root(db):
+    """Deep select starting from M:N root: tags → items → item_type."""
+    item_type = ItemType.insert(db, name="type_b")
+    item = Item.insert(db, name="Tagged", color="green", item_type=item_type)
+    Tag.insert(db, name="featured", items=[item])
+
+    rows = Tag.list(db, select=["name", "items.item_type.name"])
+
+    assert len(rows) == 1
+    assert rows[0]["name"] == "featured"
+    assert rows[0]["items"]["item_type"]["name"] == "type_b"
+
+
+def test_deep_select_with_filter_on_deep_path(db):
+    """Deep select coexists with deep filters (filters already work)."""
+    type_a = ItemType.insert(db, name="keep")
+    type_b = ItemType.insert(db, name="drop")
+    item_a = Item.insert(db, name="A", color="red", item_type=type_a)
+    item_b = Item.insert(db, name="B", color="blue", item_type=type_b)
+    ItemList.insert(db, name="Mixed", items=[item_a, item_b])
+
+    rows = ItemList.list(
+        db,
+        select=["name", "items.name", "items.item_type.name"],
+        **{"items.item_type.name": "keep"},
+    )
+
+    # Filter may still join-multiply; every returned row should be the keep path
+    assert len(rows) >= 1
+    assert all(row["items"]["item_type"]["name"] == "keep" for row in rows)
+    assert all(row["items"]["name"] == "A" for row in rows)
+
+
+def test_deep_select_invalid_deep_path_is_skipped(db):
+    """Unknown deep segment is skipped; valid siblings remain."""
+    item = Item.insert(db, name="X", color="red")
+    ItemList.insert(db, name="L", items=[item])
+
+    rows = ItemList.list(
+        db,
+        select=["name", "items.color", "items.nope.name", "items.missing"],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["name"] == "L"
+    assert rows[0]["items"]["color"] == "red"
+    assert "nope" not in rows[0]["items"]
+    assert "missing" not in rows[0]["items"]
+
+
+def test_deep_select_three_hop_path(db):
+    """Three hops: ItemList → items → tags → (scalar on Tag via items.tags.name).
+
+    Same depth as two relationship hops + leaf column; stresses path walking.
+    """
+    item = Item.insert(db, name="Phone", color="black", price=500)
+    Tag.insert(db, name="mobile", items=[item])
+    list_row = ItemList.insert(db, name="Cart", items=[item])
+
+    # Also project list id to prove root scalars survive deep projection
+    rows = ItemList.list(db, select=["id", "name", "items.tags.name"])
+
+    assert len(rows) == 1
+    assert rows[0]["id"] == list_row.id
+    assert rows[0]["name"] == "Cart"
+    assert rows[0]["items"]["tags"]["name"] == "mobile"
+
+
+# ---------------------------------------------------------------------------
 # count-in-select
 # ---------------------------------------------------------------------------
 
@@ -415,8 +574,183 @@ def test_list_with_select_count_single_field(db):
 
 
 # ---------------------------------------------------------------------------
-# Combos
+# Combos — select with sort / limit / skip / filters (shared SQL pipeline)
 # ---------------------------------------------------------------------------
+
+
+def test_select_with_sort_asc(db):
+    """Scalar select keeps sort order from the same query."""
+    Item.insert(db, name="c", color="red", price=30)
+    Item.insert(db, name="a", color="blue", price=10)
+    Item.insert(db, name="b", color="green", price=20)
+
+    rows = Item.list(
+        db,
+        select=["name", "price"],
+        sort=[{"field": "price", "order": "asc"}],
+    )
+
+    assert [row["price"] for row in rows] == [10, 20, 30]
+    assert [row["name"] for row in rows] == ["a", "b", "c"]
+
+
+def test_select_with_sort_desc_and_filter(db):
+    """Select + filter + sort share one query without dropping order."""
+    Item.insert(db, name="keep-low", color="red", price=10)
+    Item.insert(db, name="drop", color="blue", price=99)
+    Item.insert(db, name="keep-high", color="red", price=40)
+    Item.insert(db, name="keep-mid", color="red", price=25)
+
+    rows = Item.list(
+        db,
+        color="red",
+        select=["name", "price"],
+        sort=[{"field": "price", "order": "desc"}],
+    )
+
+    assert [row["name"] for row in rows] == ["keep-high", "keep-mid", "keep-low"]
+    assert all(row["price"] in (10, 25, 40) for row in rows)
+
+
+def test_select_with_limit(db):
+    """Limit applies after select projection columns are set."""
+    for i in range(5):
+        Item.insert(db, name=f"Item {i}", color="red", price=i * 10)
+
+    rows = Item.list(
+        db,
+        select=["name", "price"],
+        sort=[{"field": "price", "order": "asc"}],
+        limit=2,
+    )
+
+    assert len(rows) == 2
+    assert [row["price"] for row in rows] == [0, 10]
+
+
+def test_select_with_skip(db):
+    """Skip/offset works with select."""
+    for i in range(5):
+        Item.insert(db, name=f"Item {i}", color="red", price=i * 10)
+
+    rows = Item.list(
+        db,
+        select=["name", "price"],
+        sort=[{"field": "price", "order": "asc"}],
+        skip=2,
+    )
+
+    assert [row["price"] for row in rows] == [20, 30, 40]
+
+
+def test_select_with_limit_and_skip(db):
+    """Pagination window is stable with select + sort."""
+    for i in range(6):
+        Item.insert(db, name=f"Item {i}", color="red", price=i * 10)
+
+    rows = Item.list(
+        db,
+        select=["name", "price"],
+        sort=[{"field": "price", "order": "asc"}],
+        skip=2,
+        limit=2,
+    )
+
+    assert [row["price"] for row in rows] == [20, 30]
+    assert [row["name"] for row in rows] == ["Item 2", "Item 3"]
+
+
+def test_select_sort_by_field_not_in_select(db):
+    """ORDER BY a column that is not projected must still work."""
+    Item.insert(db, name="late", color="red", price=30)
+    Item.insert(db, name="early", color="blue", price=10)
+    Item.insert(db, name="mid", color="green", price=20)
+
+    rows = Item.list(
+        db,
+        select=["name"],
+        sort=[{"field": "price", "order": "asc"}],
+    )
+
+    assert [row["name"] for row in rows] == ["early", "mid", "late"]
+    assert all(set(row.keys()) == {"name"} for row in rows)
+
+
+def test_deep_select_with_sort_limit_skip(db):
+    """Deep select coexists with sort/limit/skip on the root model."""
+    type_a = ItemType.insert(db, name="type_a")
+    type_b = ItemType.insert(db, name="type_b")
+    ItemList.insert(
+        db,
+        name="L1",
+        items=[Item.insert(db, name="i1", color="red", price=10, item_type=type_a)],
+    )
+    ItemList.insert(
+        db,
+        name="L2",
+        items=[Item.insert(db, name="i2", color="blue", price=20, item_type=type_b)],
+    )
+    ItemList.insert(
+        db,
+        name="L3",
+        items=[Item.insert(db, name="i3", color="green", price=30, item_type=type_a)],
+    )
+
+    rows = ItemList.list(
+        db,
+        select=["name", "items.item_type.name"],
+        sort=[{"field": "name", "order": "asc"}],
+        skip=1,
+        limit=1,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["name"] == "L2"
+    assert rows[0]["items"]["item_type"]["name"] == "type_b"
+
+
+def test_select_relationship_with_limit_counts_joined_rows(db):
+    """Limit applies to SQL rows after joins (1:N multiplies before limit)."""
+    item1 = Item.insert(db, name="Item 1", color="red", price=10)
+    item2 = Item.insert(db, name="Item 2", color="blue", price=20)
+    ItemList.insert(db, name="List 1", items=[item1, item2])
+    ItemList.insert(
+        db,
+        name="List 2",
+        items=[Item.insert(db, name="Item 3", color="green", price=30)],
+    )
+
+    rows = ItemList.list(
+        db,
+        select=["name", "items.id"],
+        sort=[{"field": "name", "order": "asc"}],
+        limit=2,
+    )
+
+    # List 1 alone yields 2 joined rows; limit=2 can be satisfied by List 1 only
+    assert len(rows) == 2
+    assert all(row["name"] == "List 1" for row in rows)
+    assert {row["items"]["id"] for row in rows} == {item1.id, item2.id}
+
+
+def test_return_dict_with_sort_limit_skip(db):
+    """return_dict path also respects sort + pagination."""
+    Item.insert(db, name="a", color="red", price=30)
+    Item.insert(db, name="b", color="blue", price=10)
+    Item.insert(db, name="c", color="green", price=20)
+
+    rows = Item.list(
+        db,
+        return_dict=True,
+        sort=[{"field": "price", "order": "asc"}],
+        skip=1,
+        limit=1,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["name"] == "c"
+    assert rows[0]["price"] == 20
+    assert "item_list" not in rows[0]
 
 
 @pytest.mark.skip(reason="DISTINCT ON is only supported by PostgreSQL, not SQLite")

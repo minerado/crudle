@@ -7,6 +7,7 @@ from typing import Any
 
 
 from ...utils import flatten_dict
+from .helpers import is_sa_relationship
 from .query_field import SQLAlchemyQueryField
 
 
@@ -127,200 +128,152 @@ class SQLAlchemyQueryBuilder:
         return query.offset(skip)
 
     def __apply_select(self, query: Select, fields: list) -> Select:
-        """Applies a select to a query"""
+        """Applies a select to a query.
+
+        Relationship paths may be multi-hop (``items.item_type.name``). Joins are
+        outer and deduplicated per path prefix so one ``list`` call stays a single
+        SQL statement (no N+1). Selected relationship columns are labeled with
+        dotted paths for nested result shaping.
+        """
 
         if not fields:
             return query
 
         query_fields = []
-
-        # Track which fields are relationship fields
         relationship_fields = set()
+        joined_paths: set[tuple[str, ...]] = set()
+        selected_labels: set[str] = set()
+        rel_path_prefixes: set[tuple[str, ...]] = set()
+
+        def ensure_joins(rel_path: list[str]):
+            """Outer-join each relationship along ``rel_path`` at most once."""
+            nonlocal query
+            model = self.model
+            for index, rel_name in enumerate(rel_path):
+                path_key = tuple(rel_path[: index + 1])
+                if path_key not in joined_paths:
+                    query = query.join(getattr(model, rel_name), isouter=True)
+                    joined_paths.add(path_key)
+                model = getattr(model, rel_name).property.mapper.class_
+            return model
+
+        def add_column(column, label: str):
+            if label in selected_labels:
+                return
+            query_fields.append(column.label(label))
+            selected_labels.add(label)
 
         for f in fields:
             if f.startswith("count"):
                 splitted_field = f.split(".", 1)
                 field = splitted_field[1] if len(splitted_field) > 1 else "id"
 
-                # Handle nested relationship fields in count
                 if "." in field:
-                    parts = field.split(".", 1)
-                    rel_name = parts[0]
-                    nested_field = parts[1]
-
-                    # Check if the first part is a relationship
-                    if hasattr(self.model, rel_name):
-                        attr = getattr(self.model, rel_name)
-                        if hasattr(attr, "property") and hasattr(
-                            attr.property, "mapper"
-                        ):
-                            # This is a nested relationship field for count
-                            relationship_fields.add(rel_name)
-                            related_model = attr.property.mapper.class_
-
-                            # Join the relationship if not already joined
-                            if rel_name not in [
-                                field.split("_")[0]
-                                for field in [
-                                    str(field)
-                                    for field in query_fields
-                                    if hasattr(field, "name")
-                                ]
-                            ]:
-                                query = query.join(
-                                    getattr(self.model, rel_name), **{"isouter": True}
-                                )
-
-                            # Select the specific nested field for count
-                            if hasattr(related_model, nested_field):
-                                nested_column = getattr(related_model, nested_field)
-                                query_fields.append(
-                                    func.count(distinct(nested_column)).label(f)
-                                )
-                            else:
-                                # Field doesn't exist in related model, count all records
-                                query_fields.append(
-                                    func.count(distinct(self.model.id)).label(f)
-                                )
-                        else:
-                            # Not a relationship, count all records
-                            query_fields.append(
-                                func.count(distinct(self.model.id)).label(f)
+                    query_field = SQLAlchemyQueryField(field, self.model)
+                    if query_field.parents:
+                        relationship_fields.add(query_field.parents[0])
+                        for index in range(len(query_field.parents)):
+                            rel_path_prefixes.add(
+                                tuple(query_field.parents[: index + 1])
                             )
-                    else:
-                        # Relationship doesn't exist, count all records
+                    try:
+                        query = query_field.join_query(
+                            query, join_opts={"isouter": True}
+                        )
+                        for index in range(len(query_field.parents)):
+                            joined_paths.add(tuple(query_field.parents[: index + 1]))
+                        query_fields.append(
+                            func.count(distinct(query_field.parent_model_field)).label(
+                                f
+                            )
+                        )
+                        selected_labels.add(f)
+                    except Exception:
                         query_fields.append(
                             func.count(distinct(self.model.id)).label(f)
                         )
+                        selected_labels.add(f)
                 else:
-                    # Regular field for count
                     query_field = SQLAlchemyQueryField(field, self.model)
                     query = query_field.join_query(query)
                     query_fields.append(
                         func.count(distinct(query_field.parent_model_field)).label(f)
                     )
-            else:
-                # Check if this is a nested field (e.g., "items.color")
-                if "." in f:
-                    parts = f.split(".", 1)
-                    rel_name = parts[0]
-                    nested_field = parts[1]
+                    selected_labels.add(f)
+                continue
 
-                    # Check if the first part is a relationship
-                    if hasattr(self.model, rel_name):
-                        attr = getattr(self.model, rel_name)
-                        if hasattr(attr, "property") and hasattr(
-                            attr.property, "mapper"
-                        ):
-                            # This is a nested relationship field
-                            relationship_fields.add(rel_name)
-                            related_model = attr.property.mapper.class_
+            parts = f.split(".")
+            model = self.model
+            rel_path: list[str] = []
+            skipped = False
 
-                            # Join the relationship if not already joined
-                            if rel_name not in [
-                                field.split("_")[0]
-                                for field in [
-                                    str(field)
-                                    for field in query_fields
-                                    if hasattr(field, "name")
-                                ]
-                            ]:
-                                query = query.join(
-                                    getattr(self.model, rel_name), **{"isouter": True}
-                                )
+            for index, part in enumerate(parts):
+                is_last = index == len(parts) - 1
 
-                            # Select only the specific nested field
-                            if hasattr(related_model, nested_field):
-                                nested_column = getattr(related_model, nested_field)
-                                aliased_column = nested_column.label(
-                                    f"{rel_name}_{nested_field}"
-                                )
-                                query_fields.append(aliased_column)
-                            else:
-                                # Field doesn't exist in related model, skip it
-                                continue
-                        else:
-                            # Not a relationship, skip it
-                            continue
-                    else:
-                        # Relationship doesn't exist, skip it
-                        continue
+                if is_sa_relationship(model, part):
+                    rel_path.append(part)
+                    relationship_fields.add(rel_path[0])
+                    rel_path_prefixes.add(tuple(rel_path))
+                    model = getattr(model, part).property.mapper.class_
+
+                    if is_last:
+                        ensure_joins(rel_path)
+                        path_prefix = ".".join(rel_path)
+                        for column in model.__table__.columns:
+                            add_column(column, f"{path_prefix}.{column.name}")
+                    continue
+
+                if not is_last:
+                    # Column (or unknown) in the middle of a path — invalid
+                    skipped = True
+                    break
+
+                if not hasattr(model, part):
+                    skipped = True
+                    break
+
+                if rel_path:
+                    ensure_joins(rel_path)
+                    column = getattr(model, part)
+                    add_column(column, f)
                 else:
-                    # Direct field (not nested)
-                    query_field = SQLAlchemyQueryField(f, self.model)
-                    # Check if this is a relationship field
-                    if hasattr(self.model, f):
-                        attr = getattr(self.model, f)
-                        # Check if it's a SQLAlchemy relationship property
-                        if hasattr(attr, "property") and hasattr(
-                            attr.property, "mapper"
-                        ):
-                            # This is a relationship field - we need to join and select the related model
-                            relationship_fields.add(f)
-                            # Manually join the relationship since SQLAlchemyQueryField.join_query won't work for direct relationships
-                            related_model = attr.property.mapper.class_
-                            query = query.join(
-                                getattr(self.model, f), **{"isouter": True}
-                            )
-                            # Select all columns from the related model with a prefix
-                            for column in related_model.__table__.columns:
-                                # Add the relationship name as a prefix to avoid column name conflicts
-                                aliased_column = column.label(f"{f}_{column.name}")
-                                query_fields.append(aliased_column)
-                        else:
-                            # This is a regular column field
-                            query_fields.append(query_field.parent_model_field)
-                    else:
-                        # Field doesn't exist, skip it
-                        continue
+                    # Root scalar column
+                    query_fields.append(getattr(self.model, part))
+                    selected_labels.add(part)
 
-        # If we have relationship fields, we need to include main model columns
-        # But only include the specific columns that are requested (non-relationship fields)
+            if skipped:
+                continue
+
+        # Intermediate PKs so outer-join nulls can distinguish missing collections
+        # vs missing nested to-ones (stripped from output if not requested).
+        for prefix in sorted(rel_path_prefixes, key=len):
+            leaf_model = ensure_joins(list(prefix))
+            if hasattr(leaf_model, "id"):
+                add_column(getattr(leaf_model, "id"), f"{'.'.join(prefix)}.id")
+
+        # Keep explicitly requested root scalars when relationships are present
         if relationship_fields:
-            # Get the field names that were already added
-            added_fields = set()
-            for field in query_fields:
-                if hasattr(field, "name"):
-                    added_fields.add(field.name)
-                elif hasattr(field, "key"):
-                    added_fields.add(field.key)
-
             for f in fields:
-                if (
-                    not f.startswith("count")
-                    and f not in relationship_fields
-                    and f not in added_fields
-                ):
-                    if hasattr(self.model, f):
-                        attr = getattr(self.model, f)
-                        # Only add if it's not a relationship field
-                        if not (
-                            hasattr(attr, "property")
-                            and hasattr(attr.property, "mapper")
-                        ):
-                            query_fields.append(getattr(self.model, f))
+                if f.startswith("count") or "." in f or f in relationship_fields:
+                    continue
+                if f in selected_labels:
+                    continue
+                if hasattr(self.model, f) and not is_sa_relationship(self.model, f):
+                    query_fields.append(getattr(self.model, f))
+                    selected_labels.add(f)
 
-        for f in query_fields:
-            if isinstance(f, SQLAlchemyQueryField):
-                query = f.join_query(query)
-
-        # If we have count fields and other fields, we need to group by the other fields
         has_count = any(field.startswith("count") for field in fields)
         has_other_fields = any(not field.startswith("count") for field in fields)
 
         if has_count and has_other_fields:
-            # Add GROUP BY for non-count fields
             group_by_fields = []
             for field in fields:
-                if not field.startswith("count"):
-                    query_field = SQLAlchemyQueryField(field, self.model)
-                    if hasattr(self.model, field):
-                        attr = getattr(self.model, field)
-                        if not (
-                            hasattr(attr, "property")
-                            and hasattr(attr.property, "mapper")
-                        ):
-                            group_by_fields.append(query_field.parent_model_field)
+                if field.startswith("count"):
+                    continue
+                if "." in field or is_sa_relationship(self.model, field):
+                    continue
+                if hasattr(self.model, field):
+                    group_by_fields.append(getattr(self.model, field))
 
             if group_by_fields:
                 query = query.group_by(*group_by_fields)

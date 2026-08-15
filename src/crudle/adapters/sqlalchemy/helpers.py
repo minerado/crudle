@@ -15,6 +15,91 @@ ON_UPDATE_ASSOC_OPTIONS = {
 }
 
 
+def is_sa_relationship(model, name: str) -> bool:
+    """True if ``name`` is a SQLAlchemy relationship on ``model``."""
+    if not hasattr(model, name):
+        return False
+    attr = getattr(model, name)
+    return hasattr(attr, "property") and hasattr(attr.property, "mapper")
+
+
+def collapse_null_relationship_dicts(value, *, is_root: bool = False):
+    """Recursively turn dicts whose values are all None into None.
+
+    The root dict is preserved so ``select=["item_type"]`` with a missing
+    relationship still yields ``{"item_type": None}`` rather than ``{}``.
+    """
+    if not isinstance(value, dict):
+        return value
+    collapsed = {
+        key: collapse_null_relationship_dicts(child)
+        for key, child in value.items()
+    }
+    if not is_root and collapsed and all(child is None for child in collapsed.values()):
+        return None
+    return collapsed
+
+
+def prune_unrequested_select_paths(value, select_fields: list, prefix: str = ""):
+    """Drop nested keys that were not requested in ``select`` (e.g. auto PKs)."""
+    if not isinstance(value, dict):
+        return value
+
+    def keep_path(path: str) -> bool:
+        for field in select_fields:
+            if field.startswith("count"):
+                if path == field:
+                    return True
+                continue
+            if (
+                path == field
+                or field.startswith(f"{path}.")
+                or path.startswith(f"{field}.")
+            ):
+                return True
+        return False
+
+    pruned = {}
+    for key, child in value.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if not keep_path(path):
+            continue
+        if isinstance(child, dict):
+            pruned[key] = prune_unrequested_select_paths(child, select_fields, path)
+        else:
+            pruned[key] = child
+    return pruned
+
+
+def structure_select_row(row_dict: dict, select_fields: list) -> dict:
+    """Fold dotted select labels into nested dicts; keep ``count.*`` keys flat."""
+    structured: dict = {}
+
+    for key, value in row_dict.items():
+        if key.startswith("count"):
+            structured[key] = value
+            continue
+        if "." not in key:
+            structured[key] = value
+            continue
+
+        parts = key.split(".")
+        cursor = structured
+        for part in parts[:-1]:
+            existing = cursor.get(part)
+            if not isinstance(existing, dict):
+                existing = {}
+                cursor[part] = existing
+            cursor = existing
+        cursor[parts[-1]] = value
+
+    structured = collapse_null_relationship_dicts(structured, is_root=True)
+    if not isinstance(structured, dict):
+        return {}
+
+    return prune_unrequested_select_paths(structured, select_fields)
+
+
 def build_tsquery_string(term: str) -> str:
     """Format a string into a Postgres tsquery prefix expression.
 

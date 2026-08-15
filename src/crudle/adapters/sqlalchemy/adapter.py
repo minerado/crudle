@@ -6,6 +6,7 @@ from .helpers import (
     ON_UPDATE_ASSOC_OPTIONS,
     handle_relationship,
     set_attributes_from_dict,
+    structure_select_row,
 )
 from .query_builder import SQLAlchemyQueryBuilder
 
@@ -139,75 +140,22 @@ class SQLAlchemyAdapter:
             q = cls.build_query(**kwargs)
             result = db.execute(q).all()
 
-            # Get column names from the query result
-            if result:
-                # Get column names from the first row's keys (if it's a Row object)
-                # or from the query's selected columns
-                if hasattr(result[0], "_mapping"):
-                    # SQLAlchemy Row object
-                    column_names = list(result[0]._mapping.keys())
-                else:
-                    # Fallback: get column names from query
-                    column_names = [str(col) for col in q.column_descriptions]
-
-                # Convert tuples to dictionaries and structure relationship data
-                structured_results = []
-                for row in result:
-                    row_dict = dict(zip(column_names, row))
-
-                    # Group relationship fields into nested objects
-                    structured_row = {}
-                    relationship_data = {}
-
-                    for key, value in row_dict.items():
-                        # Check if this is a relationship field (has underscore prefix and rel_name is a relationship)
-                        is_relationship_field = False
-                        if "_" in key:
-                            # Check if this key starts with any relationship name from select_fields
-                            for field in select_fields:
-                                # Handle both direct relationship fields ("items") and nested fields ("items.color")
-                                if "." in field:
-                                    rel_name = field.split(".")[0]
-                                else:
-                                    rel_name = field
-
-                                if hasattr(cls, rel_name):
-                                    attr = getattr(cls, rel_name)
-                                    if hasattr(attr, "property") and hasattr(
-                                        attr.property, "mapper"
-                                    ):
-                                        # Check if this key starts with the relationship name + underscore
-                                        prefix = rel_name + "_"
-                                        if key.startswith(prefix):
-                                            field_name = key[
-                                                len(prefix) :
-                                            ]  # Remove the prefix
-
-                                            if rel_name not in relationship_data:
-                                                relationship_data[rel_name] = {}
-                                            relationship_data[rel_name][field_name] = (
-                                                value
-                                            )
-                                            is_relationship_field = True
-                                            break
-
-                        # Only add to structured_row if it's not a relationship field
-                        if not is_relationship_field:
-                            structured_row[key] = value
-
-                    # Add relationship data to the structured row, but only if there's actual data
-                    for rel_name, rel_data in relationship_data.items():
-                        # Check if all values in the relationship are None
-                        if all(value is None for value in rel_data.values()):
-                            structured_row[rel_name] = None
-                        else:
-                            structured_row[rel_name] = rel_data
-
-                    structured_results.append(structured_row)
-
-                return structured_results
-            else:
+            if not result:
                 return []
+
+            if hasattr(result[0], "_mapping"):
+                column_names = list(result[0]._mapping.keys())
+            else:
+                column_names = [str(col) for col in q.column_descriptions]
+
+            structured_results = []
+            for row in result:
+                row_dict = dict(zip(column_names, row))
+                structured_results.append(
+                    structure_select_row(row_dict, select_fields)
+                )
+
+            return structured_results
         elif return_dict:
             # When return_dict=True, return all fields as dictionaries (excluding relationships)
             # Get all column names (excluding relationships)

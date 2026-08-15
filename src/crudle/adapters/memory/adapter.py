@@ -1183,6 +1183,12 @@ class MemoryAdapter(AdapterInterface):
             instances = instances[:limit]
 
         if "select" in special_params or special_params.get("return_dict", False):
+            select_fields = special_params.get("select") or []
+            if any("." in field for field in select_fields):
+                for inst in instances:
+                    for field in select_fields:
+                        if "." in field and not field.startswith("count"):
+                            self._preload_select_path(inst, field.split("."))
             instances = self._apply_field_selection(instances, special_params)
         else:
             instances = [self._create_immutable_copy(inst) for inst in instances]
@@ -1279,6 +1285,102 @@ class MemoryAdapter(AdapterInterface):
 
         return sorted(instances, key=sort_key)
 
+    def _preload_select_path(self, instance: Any, parts: List[str]) -> None:
+        """Load relationship hops along a select path (leaf scalar may remain).
+
+        ``_preload_relationships`` returns a copy; we write loaded values back onto
+        ``instance`` so projection sees them without re-querying.
+        """
+        if len(parts) <= 1 or instance is None or isinstance(instance, NotLoaded):
+            return
+
+        head, *rest = parts
+        if not hasattr(instance, head):
+            return
+
+        value = getattr(instance, head)
+        if isinstance(value, NotLoaded):
+            loaded_copy = self._preload_relationships(instance, [head])
+            value = getattr(loaded_copy, head)
+            setattr(instance, head, value)
+
+        if isinstance(value, NotLoaded) or value is None:
+            return
+
+        if isinstance(value, list):
+            for item in value:
+                self._preload_select_path(item, rest)
+            return
+
+        self._preload_select_path(value, rest)
+
+    def _project_select_paths(
+        self, instance: Any, paths: List[List[str]]
+    ) -> Dict[str, Any]:
+        """Project multi-hop select paths into a nested dict (lists at collections)."""
+        if instance is None or isinstance(instance, NotLoaded):
+            return None
+
+        grouped: Dict[str, List[List[str]]] = {}
+        for path in paths:
+            if not path:
+                continue
+            head, *tail = path
+            grouped.setdefault(head, []).append(tail)
+
+        result: Dict[str, Any] = {}
+        for head, tails in grouped.items():
+            if not hasattr(instance, head):
+                continue
+
+            value = getattr(instance, head)
+            if isinstance(value, NotLoaded):
+                result[head] = None
+                continue
+
+            empty_tails = [tail for tail in tails if not tail]
+            nested_tails = [tail for tail in tails if tail]
+
+            if empty_tails and not nested_tails:
+                # Whole relationship / object
+                if isinstance(value, list):
+                    result[head] = [
+                        self._get_serializable_data(item, preserve_notloaded=False)
+                        if isinstance(item, BaseModel)
+                        else item
+                        for item in value
+                    ]
+                elif isinstance(value, BaseModel):
+                    result[head] = self._get_serializable_data(
+                        value, preserve_notloaded=False
+                    )
+                else:
+                    result[head] = value
+                continue
+
+            if nested_tails:
+                if isinstance(value, list):
+                    projected_items = []
+                    for item in value:
+                        projected = self._project_select_paths(item, nested_tails)
+                        if projected is not None:
+                            projected_items.append(projected)
+                    result[head] = projected_items
+                elif value is None:
+                    result[head] = None
+                else:
+                    projected = self._project_select_paths(value, nested_tails)
+                    result[head] = projected
+                continue
+
+            # Scalar / direct attr (empty_tails only already handled)
+            if isinstance(value, NotLoaded):
+                result[head] = None
+            else:
+                result[head] = value
+
+        return result
+
     def _apply_field_selection(
         self, instances: List[Any], special_params: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
@@ -1294,85 +1396,12 @@ class MemoryAdapter(AdapterInterface):
         for instance in instances:
             if isinstance(instance, BaseModel):
                 if select_fields:
-                    # Group fields by relationship
-                    relationship_fields = {}
-                    direct_fields = []
-
-                    for field in select_fields:
-                        if "." in field:
-                            # This is a relationship field like "items.name"
-                            rel_name, rel_field = field.split(".", 1)
-                            if rel_name not in relationship_fields:
-                                relationship_fields[rel_name] = []
-                            relationship_fields[rel_name].append(rel_field)
-                        else:
-                            # This is a direct field
-                            direct_fields.append(field)
-
-                    # Build the result dictionary
-                    item_dict = {}
-
-                    # Add direct fields
-                    for field in direct_fields:
-                        if hasattr(instance, field):
-                            value = getattr(instance, field)
-                            # Convert NotLoaded to None for dictionary output
-                            if isinstance(value, NotLoaded):
-                                value = None
-                        else:
-                            value = None
-                        item_dict[field] = value
-
-                    # Add relationship fields
-                    for rel_name, rel_fields in relationship_fields.items():
-                        if hasattr(instance, rel_name):
-                            rel_value = getattr(instance, rel_name)
-                            if isinstance(rel_value, NotLoaded):
-                                item_dict[rel_name] = None
-                            elif isinstance(rel_value, list):
-                                # One-to-many relationship
-                                item_dict[rel_name] = []
-                                for item in rel_value:
-                                    if hasattr(item, "model_dump"):
-                                        item_dict_item = item.model_dump()
-                                    else:
-                                        item_dict_item = (
-                                            item.__dict__
-                                            if hasattr(item, "__dict__")
-                                            else {}
-                                        )
-
-                                    # Select only the requested fields from the related item
-                                    selected_item = {}
-                                    for rel_field in rel_fields:
-                                        if rel_field in item_dict_item:
-                                            selected_item[rel_field] = item_dict_item[
-                                                rel_field
-                                            ]
-                                        else:
-                                            selected_item[rel_field] = None
-                                    item_dict[rel_name].append(selected_item)
-                            else:
-                                # One-to-one relationship
-                                if hasattr(rel_value, "model_dump"):
-                                    rel_dict = rel_value.model_dump()
-                                else:
-                                    rel_dict = (
-                                        rel_value.__dict__
-                                        if hasattr(rel_value, "__dict__")
-                                        else {}
-                                    )
-
-                                # Select only the requested fields from the related object
-                                selected_rel = {}
-                                for rel_field in rel_fields:
-                                    if rel_field in rel_dict:
-                                        selected_rel[rel_field] = rel_dict[rel_field]
-                                    else:
-                                        selected_rel[rel_field] = None
-                                item_dict[rel_name] = selected_rel
-                        else:
-                            item_dict[rel_name] = None
+                    paths = [
+                        field.split(".")
+                        for field in select_fields
+                        if not field.startswith("count")
+                    ]
+                    item_dict = self._project_select_paths(instance, paths) or {}
                 else:
                     # Return all fields as dictionary
                     item_dict = self._get_serializable_data(
