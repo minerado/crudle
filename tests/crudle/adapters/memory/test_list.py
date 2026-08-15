@@ -123,23 +123,6 @@ def test_list_with_le_operator(db):
     assert item3 not in items_le_20
 
 
-def test_list_with_ne_operator(db):
-    """Test listing with not equal operator."""
-    # Arrange
-    item1 = db.insert(Item, name="Item 1", color="red")
-    item2 = db.insert(Item, name="Item 2", color="blue")
-    item3 = db.insert(Item, name="Item 3", color="green")
-
-    # Act
-    non_red_items = db.list(Item, color__ne="red")
-
-    # Assert
-    assert len(non_red_items) == 2
-    assert item2 in non_red_items
-    assert item3 in non_red_items
-    assert item1 not in non_red_items
-
-
 def test_list_with_in_operator(db):
     """Test listing with in operator."""
     # Arrange

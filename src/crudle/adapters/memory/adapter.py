@@ -884,6 +884,13 @@ class MemoryAdapter(AdapterInterface):
             if operator == "eq":
                 return instance_value == filter_value
             elif operator == "ne":
+                # SQLAlchemy/SQL parity:
+                # - field__ne=None → IS NOT NULL
+                # - field__ne=x with NULL column → row excluded (NULL comparisons are unknown)
+                if filter_value is None:
+                    return instance_value is not None
+                if instance_value is None:
+                    return False
                 return instance_value != filter_value
             elif operator == "gt":
                 return instance_value > filter_value
@@ -1116,6 +1123,9 @@ class MemoryAdapter(AdapterInterface):
         for key, value in filters.items():
             if key in ["sort", "limit", "skip", "select", "return_dict", "distinct_on"]:
                 special_params[key] = value
+            elif key == "filter" and isinstance(value, dict):
+                # SQLAlchemy parity: filter={...} merges into filter params (then flattened)
+                filter_params.update(value)
             else:
                 filter_params[key] = value
 
