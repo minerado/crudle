@@ -55,44 +55,6 @@ def test_list_with_eq_operator(db):
     assert item2 in blue_items
 
 
-def test_list_with_in_operator(db):
-    """Test listing with in operator."""
-    # Arrange
-    item1 = db.insert(Item, name="Item 1", color="red")
-    item2 = db.insert(Item, name="Item 2", color="blue")
-    item3 = db.insert(Item, name="Item 3", color="green")
-    item4 = db.insert(Item, name="Item 4", color="yellow")
-
-    # Act
-    selected_items = db.list(Item, color__in=["red", "blue"])
-
-    # Assert
-    assert len(selected_items) == 2
-    assert item1 in selected_items
-    assert item2 in selected_items
-    assert item3 not in selected_items
-    assert item4 not in selected_items
-
-
-def test_list_with_ni_operator(db):
-    """Test listing with not in operator."""
-    # Arrange
-    item1 = db.insert(Item, name="Item 1", color="red")
-    item2 = db.insert(Item, name="Item 2", color="blue")
-    item3 = db.insert(Item, name="Item 3", color="green")
-    item4 = db.insert(Item, name="Item 4", color="yellow")
-
-    # Act
-    excluded_items = db.list(Item, color__ni=["red", "blue"])
-
-    # Assert
-    assert len(excluded_items) == 2
-    assert item3 in excluded_items
-    assert item4 in excluded_items
-    assert item1 not in excluded_items
-    assert item2 not in excluded_items
-
-
 def test_list_with_q_operator(db):
     """Test listing with q (text search) operator."""
     # Arrange

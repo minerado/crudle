@@ -912,8 +912,32 @@ class MemoryAdapter(AdapterInterface):
                     return instance_value < filter_value
                 return instance_value <= filter_value
             elif operator == "in":
+                # SQLAlchemy/SQL parity:
+                # - filter must be an expression list (None rejected)
+                # - NULL column never matches IN (...), even if None is in the list
+                if filter_value is None:
+                    raise Exception(
+                        "IN expression list, SELECT construct, or bound "
+                        "parameter object expected, got None."
+                    )
+                if instance_value is None:
+                    return False
                 return instance_value in filter_value
             elif operator == "ni":
+                # SQLAlchemy/SQL parity:
+                # - filter must be an expression list (None rejected)
+                # - NOT IN (... NULL ...) is never true for any row
+                # - NULL column NOT IN (non-null values) is unknown → exclude
+                # - NULL column NOT IN () is true (empty set)
+                if filter_value is None:
+                    raise Exception(
+                        "IN expression list, SELECT construct, or bound "
+                        "parameter object expected, got None."
+                    )
+                if any(v is None for v in filter_value):
+                    return False
+                if instance_value is None:
+                    return len(filter_value) == 0
                 return instance_value not in filter_value
             elif operator == "q":
                 return self._text_search(instance_value, filter_value)
