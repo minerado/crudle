@@ -1,6 +1,6 @@
 [project]
 name = "crudle"
-version = "0.1.0"
+version = "0.1.2"
 description = "A CRUD library that simplifies working with SQLAlchemy"
 readme = "README.md"
 requires-python = ">=3.13"
